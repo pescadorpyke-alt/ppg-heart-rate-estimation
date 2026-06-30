@@ -1,0 +1,26 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.ipynb_checkpoints/
+
+# --- Data & artifacts (live on D:\ppg-dalia-hr, never committed) ---
+data/raw/
+data/processed/
+*.pkl
+*.zip
+checkpoints/
+*.pt
+*.pth
+
+# --- Secrets / AWS ---
+.env
+*.pem
+.aws/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
