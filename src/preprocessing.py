@@ -52,6 +52,32 @@ def load_subject(subject_id: int) -> dict:
         return pickle.load(f, encoding="latin1")
 
 
+def load_wrist(subject_id: int) -> dict[str, np.ndarray]:
+    """Wrist signals + labels for one subject, cached as a small .npz.
+
+    The pickles are 0.8-1.7 GB each, mostly 700 Hz chest signals we never use.
+    The first call loads the pickle and writes CACHE_DIR/S{i}_wrist.npz
+    (a few MB); later calls read only that file.
+
+    Returns: bvp (N,) @64 Hz, acc (M, 3) @32 Hz, label (K,) bpm,
+             activity (A,) @4 Hz (IDs, see config.ACTIVITY_NAMES).
+    """
+    cache = C.CACHE_DIR / f"S{subject_id}_wrist.npz"
+    if cache.exists():
+        with np.load(cache) as z:
+            return {k: z[k] for k in z.files}
+    data = load_subject(subject_id)
+    out = {
+        "bvp": np.asarray(data["signal"]["wrist"]["BVP"], dtype=np.float64).reshape(-1),
+        "acc": np.asarray(data["signal"]["wrist"]["ACC"], dtype=np.float64),
+        "label": np.asarray(data["label"], dtype=np.float64).reshape(-1),
+        "activity": np.asarray(data["activity"], dtype=np.float64).reshape(-1),
+    }
+    C.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    np.savez(cache, **out)
+    return out
+
+
 # --- Filtering ---------------------------------------------------------------
 def _bandpass_sos(fs: int):
     nyq = 0.5 * fs
@@ -116,12 +142,24 @@ def preprocess_window(ppg_raw: np.ndarray, acc_raw: np.ndarray) -> np.ndarray:
 
 
 # --- Windowing ---------------------------------------------------------------
-def windows_for_subject(subject_id: int) -> tuple[np.ndarray, np.ndarray]:
-    """Return (X, y) for one subject. X: (n, 4, 512) float32, y: (n,) float32."""
-    data = load_subject(subject_id)
-    bvp = np.asarray(data["signal"]["wrist"]["BVP"], dtype=np.float64).reshape(-1)
-    acc = np.asarray(data["signal"]["wrist"]["ACC"], dtype=np.float64)  # (N, 3)
-    labels = np.asarray(data["label"], dtype=np.float64).reshape(-1)
+def window_activity(activity: np.ndarray, k: int) -> int:
+    """Activity ID for window k: the most common 4 Hz label inside the 8 s window."""
+    a0 = k * C.WINDOW_STRIDE_S * C.FS_ACTIVITY
+    seg = activity[a0 : a0 + C.WINDOW_S * C.FS_ACTIVITY].astype(int)
+    if seg.size == 0:
+        return -1
+    return int(np.bincount(seg).argmax())
+
+
+def windows_for_subject(subject_id: int, return_meta: bool = False):
+    """Return (X, y) for one subject. X: (n, 4, 512) float32, y: (n,) float32.
+
+    With return_meta=True, also returns a dict with per-window
+    `activity` (n,) int and `scale` (n, 4) float32: the std of each band-passed
+    channel *before* z-normalisation (how strong the pulse / motion was).
+    """
+    data = load_wrist(subject_id)
+    bvp, acc, labels = data["bvp"], data["acc"], data["label"]
 
     # Filter full signals once (zero-phase), then slice windows.
     bvp_f = bandpass(bvp, C.FS_PPG)
@@ -130,7 +168,7 @@ def windows_for_subject(subject_id: int) -> tuple[np.ndarray, np.ndarray]:
     ppg_step = C.WINDOW_STRIDE_S * C.FS_PPG   # 128
     acc_step = C.WINDOW_STRIDE_S * C.FS_ACC   # 64
 
-    X, y = [], []
+    X, y, act, scale = [], [], [], []
     for k, hr in enumerate(labels):
         p0 = k * ppg_step
         a0 = k * acc_step
@@ -147,8 +185,37 @@ def windows_for_subject(subject_id: int) -> tuple[np.ndarray, np.ndarray]:
         ).T                                                       # (4, 512)
         X.append(_znorm(stacked).astype(np.float32))
         y.append(np.float32(hr))
+        if return_meta:
+            act.append(window_activity(data["activity"], k))
+            scale.append(np.concatenate([[ppg_win.std()], acc_win.std(axis=0)]))
 
-    return np.asarray(X, dtype=np.float32), np.asarray(y, dtype=np.float32)
+    X = np.asarray(X, dtype=np.float32)
+    y = np.asarray(y, dtype=np.float32)
+    if not return_meta:
+        return X, y
+    meta = {
+        "activity": np.asarray(act, dtype=np.int8),
+        "scale": np.asarray(scale, dtype=np.float32),
+    }
+    return X, y, meta
+
+
+def build_all(subjects=None) -> dict[str, np.ndarray]:
+    """Windows for every subject, with subject ID and metadata per window.
+
+    Used for leave-one-subject-out evaluation, so no train/val split here.
+    """
+    subjects = subjects or C.ALL_SUBJECTS
+    parts = {"X": [], "y": [], "subject": [], "activity": [], "scale": []}
+    for s in subjects:
+        Xs, ys, meta = windows_for_subject(s, return_meta=True)
+        parts["X"].append(Xs)
+        parts["y"].append(ys)
+        parts["subject"].append(np.full(len(ys), s, dtype=np.int8))
+        parts["activity"].append(meta["activity"])
+        parts["scale"].append(meta["scale"])
+        print(f"  subject S{s}: {len(ys)} windows, HR {ys.min():.0f}-{ys.max():.0f} bpm")
+    return {k: np.concatenate(v) for k, v in parts.items()}
 
 
 def build_split(
@@ -178,6 +245,15 @@ def build_split(
     }
 
 
+def main_all():
+    """All 15 subjects -> processed/all_X.npy (memory-mappable) + all_meta.npz."""
+    C.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    d = build_all()
+    np.save(C.PROCESSED_DIR / "all_X.npy", d.pop("X"))
+    np.savez(C.PROCESSED_DIR / "all_meta.npz", **d)
+    print(f"\nSaved {len(d['y'])} windows to {C.PROCESSED_DIR}")
+
+
 def main():
     C.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     split = build_split()
@@ -189,4 +265,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main_all() if "--all" in sys.argv else main()

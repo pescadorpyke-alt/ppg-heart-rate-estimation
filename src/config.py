@@ -17,11 +17,21 @@ HEAVY_ROOT = Path(os.environ.get("PPG_HEAVY_ROOT", r"D:\ppg-dalia-hr"))
 RAW_DIR = HEAVY_ROOT / "raw"            # extracted PPG-DaLiA pickles (S1.pkl ...)
 PROCESSED_DIR = HEAVY_ROOT / "processed"
 CHECKPOINT_DIR = HEAVY_ROOT / "checkpoints"
+CACHE_DIR = HEAVY_ROOT / "cache"        # wrist-only copy of each pickle (fast reload)
+RESULTS_DIR = PROJECT_ROOT / "results"  # small CSV/JSON results, committed to git
 
 # --- PPG-DaLiA signal constants ---------------------------------------------
 # Wrist device = Empatica E4 (our model inputs).
 FS_PPG = 64          # BVP/PPG sampling rate (Hz)
 FS_ACC = 32          # wrist accelerometer sampling rate (Hz)
+FS_ACTIVITY = 4      # activity-label sampling rate in the pickles (Hz)
+ALL_SUBJECTS = list(range(1, 16))   # S1 ... S15
+
+# Activity IDs from the dataset readme (0 = transition between activities).
+ACTIVITY_NAMES = {
+    0: "transition", 1: "sitting", 2: "stairs", 3: "table_soccer", 4: "cycling",
+    5: "driving", 6: "lunch", 7: "walking", 8: "working",
+}
 # Ground-truth HR labels are provided at one value per 2 s (sliding 8 s / 2 s).
 LABEL_PERIOD_S = 2
 
