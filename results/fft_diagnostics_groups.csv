@@ -1,0 +1,7 @@
+group,pct_windows,pct_abs_error,mae_in_group
+ok,59.953,9.731,2.961
+motion,8.019,19.612,44.622
+harmonic,0.294,1.172,72.843
+subharmonic,5.959,16.3,49.911
+low_edge,2.371,8.217,63.229
+other,23.404,44.967,35.054
