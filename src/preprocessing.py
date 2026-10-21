@@ -113,15 +113,47 @@ def _znorm(x: np.ndarray) -> np.ndarray:
     return (x - mean) / (std + 1e-8)
 
 
+def assemble_window(ppg_bp: np.ndarray, acc_bp: np.ndarray, fs_out: int = 64,
+                    acc_norm: str = "zscore") -> np.ndarray:
+    """Band-passed PPG (512,) @64 Hz + ACC (256, 3) @32 Hz -> model input.
+
+    fs_out=64:  ACC linearly upsampled to 64 Hz -> (4, 512)  (original input)
+    fs_out=32:  PPG decimated to 32 Hz (every 2nd sample; safe because it is
+                already band-limited to 4 Hz, far below the new 16 Hz Nyquist)
+                -> (4, 256), half the samples for every conv layer.
+    acc_norm="zscore": every channel z-scored per window (original).
+    acc_norm="fixed":  PPG z-scored; ACC (in g) divided by ACC_SCALE (0.1 g),
+                       so motion strength is kept.
+    """
+    if fs_out == 64:
+        acc_rs = _upsample_acc(acc_bp, C.PPG_WINDOW_LEN)          # (512, 3)
+        ppg_rs = ppg_bp
+    elif fs_out == 32:
+        acc_rs = acc_bp                                            # (256, 3)
+        ppg_rs = ppg_bp[::2]                                       # (256,)
+    else:
+        raise ValueError(f"fs_out must be 64 or 32, got {fs_out}")
+    stacked = np.concatenate([ppg_rs.reshape(-1, 1), acc_rs], axis=1).T
+    if acc_norm == "zscore":
+        return _znorm(stacked).astype(np.float32)
+    if acc_norm == "fixed":
+        out = stacked / C.ACC_SCALE
+        out[:1] = _znorm(stacked[:1])
+        return out.astype(np.float32)
+    raise ValueError(f"acc_norm must be 'zscore' or 'fixed', got {acc_norm}")
+
+
 # --- Single-window preprocessing (shared by training and inference) ----------
-def preprocess_window(ppg_raw: np.ndarray, acc_raw: np.ndarray) -> np.ndarray:
-    """Turn one RAW window into the model input (4, 512) float32.
+def preprocess_window(ppg_raw: np.ndarray, acc_raw: np.ndarray, fs_out: int = 64,
+                      acc_norm: str = "zscore") -> np.ndarray:
+    """Turn one RAW window into the model input, float32.
 
     ppg_raw: (PPG_WINDOW_LEN,) raw BVP @ 64 Hz   (512 samples = 8 s)
     acc_raw: (ACC_WINDOW_LEN, 3) raw ACC @ 32 Hz (256 samples = 8 s)
 
-    Applies the same band-pass + ACC upsample + per-channel z-norm used to build
-    the training set, so the API sees inputs identical in distribution to training.
+    Applies the same band-pass + resampling + normalisation used to build the
+    training set (see assemble_window), so the API sees inputs identical in
+    distribution to training. Defaults give the original (4, 512) input.
 
     Note: training band-passes each full recording then slices windows; here we
     band-pass the provided window. Edge transients of the zero-phase filter make
@@ -136,9 +168,7 @@ def preprocess_window(ppg_raw: np.ndarray, acc_raw: np.ndarray) -> np.ndarray:
 
     ppg_f = bandpass(ppg, C.FS_PPG)
     acc_f = bandpass(acc, C.FS_ACC)
-    acc_up = _upsample_acc(acc_f, C.PPG_WINDOW_LEN)            # (512, 3)
-    stacked = np.concatenate([ppg_f.reshape(-1, 1), acc_up], axis=1).T   # (4, 512)
-    return _znorm(stacked).astype(np.float32)
+    return assemble_window(ppg_f, acc_f, fs_out, acc_norm)
 
 
 # --- Windowing ---------------------------------------------------------------
@@ -151,8 +181,11 @@ def window_activity(activity: np.ndarray, k: int) -> int:
     return int(np.bincount(seg).argmax())
 
 
-def windows_for_subject(subject_id: int, return_meta: bool = False):
-    """Return (X, y) for one subject. X: (n, 4, 512) float32, y: (n,) float32.
+def windows_for_subject(subject_id: int, return_meta: bool = False,
+                        fs_out: int = 64, acc_norm: str = "zscore"):
+    """Return (X, y) for one subject. X: (n, 4, T) float32, y: (n,) float32.
+
+    T = 512 for fs_out=64 (default), 256 for fs_out=32; see assemble_window.
 
     With return_meta=True, also returns a dict with per-window
     `activity` (n,) int and `scale` (n, 4) float32: the std of each band-passed
@@ -179,11 +212,7 @@ def windows_for_subject(subject_id: int, return_meta: bool = False):
             break
         if not np.isfinite(hr) or hr <= 0:
             continue
-        acc_up = _upsample_acc(acc_win, C.PPG_WINDOW_LEN)        # (512, 3)
-        stacked = np.concatenate(
-            [ppg_win.reshape(-1, 1), acc_up], axis=1
-        ).T                                                       # (4, 512)
-        X.append(_znorm(stacked).astype(np.float32))
+        X.append(assemble_window(ppg_win, acc_win, fs_out, acc_norm))
         y.append(np.float32(hr))
         if return_meta:
             act.append(window_activity(data["activity"], k))
@@ -200,7 +229,15 @@ def windows_for_subject(subject_id: int, return_meta: bool = False):
     return X, y, meta
 
 
-def build_all(subjects=None) -> dict[str, np.ndarray]:
+def x_path(fs_out: int = 64, acc_norm: str = "zscore"):
+    """Where build_all saves X for an input option (original input: all_X.npy)."""
+    if (fs_out, acc_norm) == (64, "zscore"):
+        return C.PROCESSED_DIR / "all_X.npy"
+    return C.PROCESSED_DIR / f"all_X_{fs_out}hz_{acc_norm}.npy"
+
+
+def build_all(subjects=None, fs_out: int = 64,
+              acc_norm: str = "zscore") -> dict[str, np.ndarray]:
     """Windows for every subject, with subject ID and metadata per window.
 
     Used for leave-one-subject-out evaluation, so no train/val split here.
@@ -208,7 +245,8 @@ def build_all(subjects=None) -> dict[str, np.ndarray]:
     subjects = subjects or C.ALL_SUBJECTS
     parts = {"X": [], "y": [], "subject": [], "activity": [], "scale": []}
     for s in subjects:
-        Xs, ys, meta = windows_for_subject(s, return_meta=True)
+        Xs, ys, meta = windows_for_subject(s, return_meta=True, fs_out=fs_out,
+                                           acc_norm=acc_norm)
         parts["X"].append(Xs)
         parts["y"].append(ys)
         parts["subject"].append(np.full(len(ys), s, dtype=np.int8))
@@ -245,13 +283,18 @@ def build_split(
     }
 
 
-def main_all():
-    """All 15 subjects -> processed/all_X.npy (memory-mappable) + all_meta.npz."""
+def main_all(fs_out: int = 64, acc_norm: str = "zscore"):
+    """All 15 subjects -> X array (see x_path) + all_meta.npz.
+
+    The metadata (labels, subject, activity, scale) does not depend on the input
+    option, so one all_meta.npz serves every X file.
+    """
     C.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    d = build_all()
-    np.save(C.PROCESSED_DIR / "all_X.npy", d.pop("X"))
+    d = build_all(fs_out=fs_out, acc_norm=acc_norm)
+    out = x_path(fs_out, acc_norm)
+    np.save(out, d.pop("X"))
     np.savez(C.PROCESSED_DIR / "all_meta.npz", **d)
-    print(f"\nSaved {len(d['y'])} windows to {C.PROCESSED_DIR}")
+    print(f"\nSaved {len(d['y'])} windows to {out}")
 
 
 def main():
@@ -267,4 +310,11 @@ def main():
 if __name__ == "__main__":
     import sys
 
-    main_all() if "--all" in sys.argv else main()
+    # python -m src.preprocessing --all [--fs 32] [--acc-norm fixed]
+    args = sys.argv[1:]
+    if "--all" in args:
+        fs = int(args[args.index("--fs") + 1]) if "--fs" in args else 64
+        norm = args[args.index("--acc-norm") + 1] if "--acc-norm" in args else "zscore"
+        main_all(fs, norm)
+    else:
+        main()

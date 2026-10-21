@@ -27,12 +27,27 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from . import config as C
-from .model import PPGHeartRateCNN, count_params
+from functools import partial
+
+from .model import DSHeartRateCNN, PPGHeartRateCNN, count_params
+from .preprocessing import x_path
 from .train import fit, predict, set_seed
 
-# Model registry: Phase 2 variants get added here.
+# Model registry. Each Phase 2 variant changes one thing from the one above it.
 MODELS = {
-    "cnn_v0": PPGHeartRateCNN,   # original 4-block CNN, (4, 512) input
+    "cnn_v0": PPGHeartRateCNN,         # original CNN, 64 Hz input
+    "cnn_v0_32hz": PPGHeartRateCNN,    # same CNN, 32 Hz input
+    "ds_32hz": DSHeartRateCNN,         # depthwise separable blocks 2-4
+    "ds_32hz_fixed": DSHeartRateCNN,   # same, ACC scaled by 0.1 g, not z-scored
+    "ds_wide_32hz_fixed": partial(DSHeartRateCNN, widths=(48, 96, 192, 256)),
+}
+# Input option per model: sample rate and ACC normalisation (preprocessing.py).
+INPUTS = {
+    "cnn_v0": {"fs": 64, "acc_norm": "zscore", "shape": (4, 512)},
+    "cnn_v0_32hz": {"fs": 32, "acc_norm": "zscore", "shape": (4, 256)},
+    "ds_32hz": {"fs": 32, "acc_norm": "zscore", "shape": (4, 256)},
+    "ds_32hz_fixed": {"fs": 32, "acc_norm": "fixed", "shape": (4, 256)},
+    "ds_wide_32hz_fixed": {"fs": 32, "acc_norm": "fixed", "shape": (4, 256)},
 }
 
 
@@ -49,12 +64,18 @@ def main():
     # project CPU, so the original 80 / 12 would need ~13 h for 15 folds (D8).
     ap.add_argument("--epochs", type=int, default=15)
     ap.add_argument("--patience", type=int, default=5)
+    ap.add_argument("--threads", type=int, default=0,
+                    help="torch CPU threads (0 = torch default)")
     args = ap.parse_args()
+    if args.threads:
+        torch.set_num_threads(args.threads)
     test_subjects = ([int(s) for s in args.subjects.split(",")] if args.subjects
                      else C.ALL_SUBJECTS)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    X = torch.from_numpy(np.load(C.PROCESSED_DIR / "all_X.npy"))
+    inp = INPUTS[args.model]
+    X = torch.from_numpy(np.load(x_path(inp["fs"], inp["acc_norm"])))
+    assert tuple(X.shape[1:]) == inp["shape"], (X.shape, inp)
     meta = np.load(C.PROCESSED_DIR / "all_meta.npz")
     y = torch.from_numpy(meta["y"])
     subj, act = meta["subject"], meta["activity"]
@@ -86,6 +107,7 @@ def main():
               f"best epoch {best['epoch']:3d}/{len(best['history'])} | "
               f"{best['seconds']:.0f} s", flush=True)
         torch.save({"model_state": best["state"], "model": args.model,
+                    "input": INPUTS[args.model],
                     "test_subject": s, "val_subject": v},
                    C.CHECKPOINT_DIR / f"loso_{args.model}_S{s}.pt")
 

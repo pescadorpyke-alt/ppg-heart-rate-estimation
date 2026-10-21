@@ -47,6 +47,16 @@ BP_LOWCUT_HZ = 0.5
 BP_HIGHCUT_HZ = 4.0
 BP_ORDER = 4
 
+# --- Model input options (Phase 2) -------------------------------------------
+# Used by acc_norm="fixed": ACC is divided by this constant instead of being
+# z-scored per window, so motion strength is kept (per-window z-scoring makes a
+# still wrist look as "active" as a moving one).
+# Units: the pickles store wrist ACC in g (|ACC| ~= 1.01 at rest, checked); the
+# 1/64 g in the dataset readme applies to the raw E4 CSVs, not the pickles.
+# 0.1 g puts band-passed arm motion (~0.18 g std while walking) near unit scale,
+# like the z-scored PPG channel, while a still wrist stays near 0.
+ACC_SCALE = 0.1
+
 # --- Subject split (split by SUBJECT to avoid leakage) ----------------------
 # Small subset for fast, defensible training (portfolio, not SOTA).
 # 5 train + 2 val subjects (split by SUBJECT to avoid leakage).
