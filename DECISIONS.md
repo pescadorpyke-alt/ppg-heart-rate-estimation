@@ -80,8 +80,9 @@ the 15 subjects. Windows are the dataset's own: 8 s long, every 2 s.
 
 **Trade-off:** 15 trainings cost about 15× the compute of a single split. In
 return, every subject is tested exactly once by a model that never saw them, and
-the spread across subjects becomes visible. That spread is large: S5 is hard for
-every method I have run, and for the published methods too. The old validation
+the spread across subjects becomes visible. That spread is large: S5 is the hardest
+subject for every baseline I have run, and for three of the four methods in the
+Deep PPG paper's per-subject table. The old validation
 set contained S5, which is why the old naive FFT looked worse than predicting the
 mean (31.4 vs 23.9 bpm). Over all 15 subjects the two are level (18.38 vs 18.57).
 
@@ -185,3 +186,7 @@ about 2.8× more training windows per epoch than the old split did, and every
 fold's learning curve is saved in `results/loso_<model>_summary.json`, so
 whether the cap cost accuracy can be checked rather than guessed. All Phase 2
 variants use the same budget, so their comparison stays fair.
+
+**Outcome (cnn_v0, 15 folds):** no fold's best epoch was the last allowed one.
+Best epochs ranged from 1 to 11, and all but one fold stopped early. The whole
+run took 4.26 h of training. So for this model the cap did not cut training short.
