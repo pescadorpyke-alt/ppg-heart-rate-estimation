@@ -162,3 +162,26 @@ agree exactly (64,697).
 
 **Trade-off:** windows that straddle two activities get one label. That only
 matters for per-activity error tables, not for training.
+
+---
+
+## D8. Training budget per fold: at most 15 epochs, stop after 5 without improvement
+
+**Chosen:** in leave-one-subject-out runs, each fold trains for at most 15 epochs
+and stops early when validation MAE has not improved for 5 epochs.
+
+**Why:** measured on this machine, one epoch on 13 subjects (about 56,000 windows)
+takes about 94 s. The original setting (up to 80 epochs, patience 12) ran 33
+epochs on the old split, so 15 folds would need about 13 hours. With the cap, the
+worst case is about 6 hours.
+
+**Alternatives:**
+- *Keep 80 / 12:* most faithful to the original training, but too slow to repeat
+  for every Phase 2 variant.
+- *Use fewer folds:* faster, but gives up the per-subject picture that D3 is for.
+
+**Trade-off:** a capped model may be slightly undertrained. Each fold now sees
+about 2.8× more training windows per epoch than the old split did, and every
+fold's learning curve is saved in `results/loso_<model>_summary.json`, so
+whether the cap cost accuracy can be checked rather than guessed. All Phase 2
+variants use the same budget, so their comparison stays fair.
