@@ -167,8 +167,8 @@ def main():
         w = csv.writer(f)
         w.writerow(["method"] + [f"S{s}" for s in C.ALL_SUBJECTS] + ["mean", "std"])
         for name, maes in results.items():
-            w.writerow([name] + [round(v, 3) for v in maes]
-                       + [round(maes.mean(), 3), round(maes.std(), 3)])
+            w.writerow([name] + [round(v, 4) for v in maes]
+                       + [round(maes.mean(), 4), round(maes.std(), 4)])
     print(f"\nWrote {out}")
 
 
