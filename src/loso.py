@@ -66,6 +66,8 @@ def main():
     ap.add_argument("--patience", type=int, default=5)
     ap.add_argument("--threads", type=int, default=0,
                     help="torch CPU threads (0 = torch default)")
+    ap.add_argument("--resume", action="store_true",
+                    help="reuse folds already saved under HEAVY_ROOT/folds/")
     args = ap.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)
@@ -83,6 +85,9 @@ def main():
           f"({count_params(MODELS[args.model]()):,} params)", flush=True)
 
     C.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    # One file per finished fold, so a crash or reboot loses at most one fold.
+    fold_dir = C.HEAVY_ROOT / "folds" / f"loso_{args.model}"
+    fold_dir.mkdir(parents=True, exist_ok=True)
     pred_all = np.full(len(y), np.nan, dtype=np.float32)
     rows, histories = [], []
     for s in test_subjects:
@@ -90,6 +95,15 @@ def main():
         tr = np.flatnonzero((subj != s) & (subj != v))
         va = np.flatnonzero(subj == v)
         te = np.flatnonzero(subj == s)
+        fold_file = fold_dir / f"S{s}.npz"
+        if args.resume and fold_file.exists():
+            with np.load(fold_file, allow_pickle=False) as z:
+                pred_all[te] = z["pred"]
+                rows.append(json.loads(str(z["row"])))
+                histories.append(json.loads(str(z["history"])))
+            print(f"S{s:<2} resumed from {fold_file.name}: "
+                  f"test MAE {rows[-1]['test_mae']:6.2f}", flush=True)
+            continue
         set_seed(C.SEED)
         model = MODELS[args.model]().to(device)
         best = fit(model, TensorDataset(X[tr], y[tr]), TensorDataset(X[va], y[va]),
@@ -110,6 +124,8 @@ def main():
                     "input": INPUTS[args.model],
                     "test_subject": s, "val_subject": v},
                    C.CHECKPOINT_DIR / f"loso_{args.model}_S{s}.pt")
+        np.savez(fold_file, pred=pred, row=json.dumps(rows[-1]),
+                 history=json.dumps(histories[-1]))
 
     maes = np.array([r["test_mae"] for r in rows])
     done = ~np.isnan(pred_all)
