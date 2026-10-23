@@ -310,3 +310,70 @@ is carried into Phase 3. Its margins over the other variants are 0.04 (`cnn_v0`)
 under 0.5. So by my own rule this is a tie on accuracy, and the honest claim is:
 **7× fewer MACs and 2.5× fewer parameters than the original, at the same
 accuracy**, not "a more accurate model". Its test MAE is 9.00 ± 4.55 bpm.
+
+---
+
+## D13. Export path: PyTorch → ONNX → TensorFlow → TFLite, in its own environment
+
+**Chosen:** `torch.onnx.export` (the TorchScript-based exporter, opset 17) →
+`onnx2tf` with its `tf_converter` backend, which writes a TensorFlow SavedModel →
+TensorFlow's `TFLiteConverter` for FP32, FP16 and INT8. The model is exported with
+batch size 1, which is how a device runs it. All of this lives in a separate
+virtual environment (`.venv-export`: TensorFlow 2.21, onnx2tf 2.6.9, ONNX Runtime
+1.26, LiteRT interpreter), so TensorFlow's dependencies cannot break training.
+
+**Check:** on fold S1, the ONNX and TFLite FP32 models give the same test MAE as
+PyTorch (5.839 bpm) and differ from it by less than 0.0001 bpm on every window.
+
+**Alternatives:**
+- *onnx2tf's newer default backend (`flatbuffer_direct`):* writes `.tflite`
+  directly, but supports fewer operators and quantization modes and skips
+  TensorFlow's standard quantizer.
+- *Google's direct PyTorch → TFLite converter (ai-edge-torch / LiteRT Torch):*
+  one step instead of three. Not used because the ONNX route is the most common
+  in industry, works on Windows, and gives an ONNX file usable by other runtimes
+  too.
+- *The new `torch.export`-based ONNX exporter:* the default since PyTorch 2.9;
+  the older exporter was kept because its output is what onnx2tf is most tested on.
+
+**Trade-off:** three tools instead of one, and the input layout changes on the way
+(channels-first `(1, 4, 256)` in PyTorch/ONNX becomes channels-last `(1, 256, 4)`
+in TFLite). In return every step can be checked against PyTorch, and each format
+uses its runtime's standard tools.
+
+---
+
+## D14. Benchmark setup: one pinned core, one thread, batch 1
+
+**Chosen** (`src/benchmark.py`): the process is pinned to one CPU core, every
+runtime uses one thread, batch size 1, 100 warm-up runs, then 2,000 timed runs;
+median, p95 and p99 latency are reported. TFLite is timed with its default
+XNNPACK kernels and again with plain built-in kernels.
+
+**Alternatives:** time with all cores (higher throughput, but a wearable gets a
+fraction of one small core); run on an emulator such as Renode/QEMU for a
+Cortex-M (closer to a device, but emulators do not give trustworthy timing).
+
+**Trade-off:** this measures relative cost between formats on a real CPU and
+proves the model runs end-to-end through each runtime. It is still a 3.6 GHz
+desktop core, so the absolute numbers are **not** device latency, and they are
+never presented as such.
+
+---
+
+## D15. When to try quantization-aware training (rule set before the results)
+
+**Chosen:** post-training INT8 quantization first, calibrated per fold on 500
+windows from that fold's training subjects only. Quantization-aware training (QAT)
+is tried **only if** the INT8 model's LOSO MAE is more than **0.5 bpm** worse than
+FP32 (mean over the 15 subjects). 0.5 bpm is the same noise threshold as D12.
+
+This rule is committed before the 15-fold INT8 results exist (only fold S1 had
+been seen: 5.839 FP32 vs 5.976 INT8).
+
+**Alternatives:** always do QAT (more work and another 15-fold training run, for
+a gain that may be within noise); never do QAT (cheaper, but would hide a real
+accuracy loss if there is one).
+
+**Trade-off:** a threshold set in advance means the decision cannot be bent to
+fit the result.
