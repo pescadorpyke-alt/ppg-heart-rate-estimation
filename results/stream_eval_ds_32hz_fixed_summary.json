@@ -1,0 +1,100 @@
+{
+  "offline_fp32": {
+    "mae_mean_over_subjects": 9.003018760681153,
+    "mae_std_over_subjects": 4.549086772367419,
+    "per_activity_mae": {
+      "transition": 11.238183781490168,
+      "sitting": 3.77530595692171,
+      "stairs": 20.39766732098402,
+      "table_soccer": 12.888291652068432,
+      "cycling": 13.49426711082733,
+      "driving": 6.227079848317781,
+      "lunch": 5.994357253310074,
+      "walking": 12.143071689325518,
+      "working": 4.201759458696532
+    }
+  },
+  "offline_int8": {
+    "mae_mean_over_subjects": 9.070806090037028,
+    "mae_std_over_subjects": 4.5649000264913075,
+    "per_activity_mae": {
+      "transition": 11.304948616953466,
+      "sitting": 3.9294132250199096,
+      "stairs": 20.37528925392502,
+      "table_soccer": 12.950152198163979,
+      "cycling": 13.484474709354558,
+      "driving": 6.343802698902719,
+      "lunch": 6.058284430512992,
+      "walking": 12.183131869508784,
+      "working": 4.27889071546808
+    }
+  },
+  "per_window_fp32": {
+    "mae_mean_over_subjects": 9.102635224660238,
+    "mae_std_over_subjects": 4.540424459472647,
+    "per_activity_mae": {
+      "transition": 11.284634677757374,
+      "sitting": 4.087381916041968,
+      "stairs": 20.474376037776672,
+      "table_soccer": 12.863490402750122,
+      "cycling": 13.51706440071877,
+      "driving": 6.332895341644889,
+      "lunch": 6.1022853336275125,
+      "walking": 12.283518385323713,
+      "working": 4.322324460768007
+    }
+  },
+  "per_window_int8": {
+    "mae_mean_over_subjects": 9.177822462717693,
+    "mae_std_over_subjects": 4.563298454726865,
+    "per_activity_mae": {
+      "transition": 11.36315244347444,
+      "sitting": 4.237149215000259,
+      "stairs": 20.433833699051192,
+      "table_soccer": 12.945595624849394,
+      "cycling": 13.506721913969006,
+      "driving": 6.436877345300184,
+      "lunch": 6.179405231822007,
+      "walking": 12.33332674539366,
+      "working": 4.410250829979716
+    },
+    "vs_offline_int8": {
+      "mean_diff": 0.10701637268066407,
+      "worse_on_subjects": 14
+    }
+  },
+  "streaming_fp32": {
+    "mae_mean_over_subjects": 11.392137050628662,
+    "mae_std_over_subjects": 4.803824286778176,
+    "per_activity_mae": {
+      "transition": 13.290965107866876,
+      "sitting": 13.489880701884527,
+      "stairs": 20.725491589990504,
+      "table_soccer": 14.104218120492382,
+      "cycling": 14.101127196140878,
+      "driving": 8.117943460614155,
+      "lunch": 7.613462239006935,
+      "walking": 14.233549587062148,
+      "working": 7.077384402811688
+    }
+  },
+  "streaming_int8": {
+    "mae_mean_over_subjects": 11.47370958328247,
+    "mae_std_over_subjects": 4.8763499853734915,
+    "per_activity_mae": {
+      "transition": 13.375797409593396,
+      "sitting": 13.687667290630579,
+      "stairs": 20.699644831309683,
+      "table_soccer": 14.17563895683784,
+      "cycling": 14.0703519057239,
+      "driving": 8.257241351238978,
+      "lunch": 7.678649676906794,
+      "walking": 14.310694987098282,
+      "working": 7.153084190954976
+    },
+    "vs_offline_int8": {
+      "mean_diff": 2.4029034932454425,
+      "worse_on_subjects": 15
+    }
+  }
+}
