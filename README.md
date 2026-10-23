@@ -11,11 +11,13 @@ working end-to-end pipeline (signal processing → PyTorch model → live deploy
 API), **not** state-of-the-art accuracy.
 
 > **Status:** being turned into an edge-AI project (branch `edge-ai`).
-> Evaluated with **leave-one-subject-out over all 15 subjects**: the edge model
-> (`ds_32hz_fixed`, 46,753 params, 1.61 M MACs per window) reaches
-> **9.00 ± 4.55 bpm** MAE, the same accuracy as the original CNN (9.47 ± 4.94)
-> at 7× less compute. The best DSP baseline gets 15.10 ± 6.70 and predicting the
-> mean 18.57 ± 7.68 (see [Results](#results)).
+> Evaluated with **leave-one-subject-out over all 15 subjects**. The shipped
+> edge model is a **70 KB INT8 TFLite** network (46,753 params, 1.61 M MACs per
+> window) that reaches **9.24 ± 4.83 bpm** MAE **on the streaming pipeline a
+> device can actually run** (causal filtering, a reading every 2 s). That is the
+> same accuracy as the original CNN (9.47 ± 4.94, offline only) at 7× less
+> compute. The best DSP baseline gets 15.10 ± 6.70 and predicting the mean
+> 18.57 ± 7.68 (see [Results](#results)).
 > The **public API** at
 > [pescas-ppg-heart-rate.hf.space](https://pescas-ppg-heart-rate.hf.space/docs)
 > still serves the original model, trained on the old 5-subject split.
@@ -53,9 +55,16 @@ ppg-heart-rate-estimation/
 │   ├── export.py         # PyTorch -> ONNX -> TFLite FP32/FP16/INT8, per fold
 │   ├── quant_errors.py   # per-window INT8 vs FP32 error, INT8 output ceiling
 │   ├── benchmark.py      # latency per format/runtime, 1 core / 1 thread
+│   ├── stream.py         # streaming (causal) preprocessing, as on a device
+│   ├── stream_eval.py    # MAE: offline vs per-window vs streaming input
+│   ├── device_demo.py    # simulated device loop: timing, memory, plot
+│   ├── train_final.py    # deployable model, all 15 subjects
+│   ├── export_final.py   # deployable model -> models/
 │   ├── infer.py          # load checkpoint + predict one window
 │   └── make_example.py   # dump a real window to api/example_payload.json
 ├── results/              # small CSV/JSON results produced by the scripts above
+├── models/               # deployable model: INT8/FP32 TFLite, ONNX, input spec
+├── docs/                 # DEVICE.md (real-device next steps), demo plot
 ├── api/
 │   └── main.py           # FastAPI inference service (/, /predict, /health, /docs)
 ├── deploy/               # AWS Lambda deploy (Dockerfile, scripts, IAM, trade-off)
@@ -288,6 +297,46 @@ Two anomalies on this Windows machine are kept in that file rather than hidden
 in ~12 ms, and TFLite's built-in INT8 kernels (3.9 ms) were slower than its plain
 reference kernels (1.8 ms).
 
+### Running it like a device (Phase 4, no hardware)
+
+A wearable cannot filter with zero phase, the way training did: that needs future
+samples. It filters each sample as it arrives (causal) and produces a heart rate
+every 2 s. [`src/stream.py`](src/stream.py) implements that: a causal band-pass
+with state carried between 2 s chunks and 8 s ring buffers, 5,248 bytes of
+state. Measured with each fold's INT8 model on its held-out subject
+([`src/stream_eval.py`](src/stream_eval.py)):
+
+| Preprocessing path | Model trained on zero-phase input | **Model trained on causal input** |
+|---|---|---|
+| Offline (as in training) | 9.07 ± 4.57 | 9.24 ± 4.83 |
+| Per window, zero-phase (the current API) | 9.18 ± 4.56 | 11.75 ± 5.94 |
+| **Streaming, causal (a device)** | 11.47 ± 4.88 | **9.24 ± 4.83** |
+
+INT8 MAE in bpm, 15 subjects. **The model that looked best offline lost 2.4 bpm
+on the pipeline a device can actually run**, worse on all 15 subjects. Under a
+rule committed before the measurement (D19), it was retrained on causally
+filtered input, which is bit-identical to what the streaming code produces. On the
+device pipeline that brings it back to 9.24 bpm (D21). Lesson: evaluate the
+pipeline you will deploy, not just the model.
+
+**Simulated device loop** ([`src/device_demo.py`](src/device_demo.py)): a held-out
+subject replayed in 2 s sensor chunks → streaming preprocessing → fully-INT8
+inference, pinned to one core:
+
+![Simulated device loop on held-out subject S7](docs/device_demo_ds_32hz_fixed_causal_S7.png)
+
+S7 is an easier-than-average subject (5.0 bpm here; the mean over all 15 is 9.24).
+Per 2 s window: preprocessing 177 µs + inference 114 µs (median) on a desktop
+core, so the CPU is busy 0.015 % of the time. Memory: 70.4 KB model, activations
+between 12.0 and 55.3 KB (lower and upper bound), 5.1 KB of preprocessing state.
+These are desktop numbers. What a microcontroller or Android build would need,
+and how to measure it there, is in [`docs/DEVICE.md`](docs/DEVICE.md).
+
+**Deployable model:** [`models/`](models/) holds the final model (the same recipe
+trained on all 15 subjects, D20) as INT8 / FP32 TFLite and ONNX, plus
+`ppg_hr.json` with the exact input spec and quantization parameters. Its accuracy
+estimate is the LOSO result above; no data was left over to measure it directly.
+
 ### Comparison with published results on PPG-DaLiA
 
 All numbers below are copied from the cited papers, not re-run. MAE in bpm,
@@ -305,7 +354,8 @@ mean ± std over subjects where given.
 | Q-PPG-S, INT4 on STM32WB55 | 7.73 | 1.9 kB | Q-PPG, Table IV |
 | This repo: original 1D CNN, FP32 | 9.47 ± 4.94 | 118,945 params | this README |
 | This repo: `ds_32hz_fixed`, FP32 | 9.00 ± 4.55 | 46,753 params, 1.61 M MACs | this README |
-| **This repo: `ds_32hz_fixed`, INT8 TFLite** | **9.07 ± 4.57** | 70.6 KB file | this README |
+| This repo: `ds_32hz_fixed`, INT8 TFLite, offline input | 9.07 ± 4.57 | 70.6 KB file | this README |
+| **This repo: `ds_32hz_fixed_causal`, INT8, streaming input** | **9.24 ± 4.83** | 70.4 KB file | this README |
 
 Sources:
 - **Deep PPG:** A. Reiss, I. Indlekofer, P. Schmidt, K. Van Laerhoven,
@@ -397,6 +447,14 @@ python -m src.report --variants       # Phase 2 comparison table
 python -m src.export --model ds_32hz_fixed            # 15 folds x FP32/FP16/INT8
 python -m src.quant_errors hr_stratified_2d           # per-window INT8 error, ceilings
 python -m src.benchmark --model ds_32hz_fixed         # latency, 1 core / 1 thread
+
+# Phase 4: causal input, streaming evaluation, device loop, final model
+python -m src.preprocessing --all --fs 32 --acc-norm fixed --filter causal
+python -m src.loso --model ds_32hz_fixed_causal                 # training env
+python -m src.export --model ds_32hz_fixed_causal               # export env
+python -m src.stream_eval ds_32hz_fixed_causal                  # export env
+python -m src.device_demo --model ds_32hz_fixed_causal --subject 7
+python -m src.train_final && python -m src.export_final        # -> models/
 ```
 
 ## API usage
@@ -496,6 +554,10 @@ Stated honestly — this is a scoped portfolio project, not a research result.
 - **Minimal hyperparameter tuning** of the CNN: no learning-rate or architecture
   sweep yet (architecture work is Phase 2).
 - **The deployed API still serves the old-split model**, not a LOSO-evaluated one.
+  The shipped causal model needs the API's preprocessing switched to the
+  causal streaming path first (D21).
+- **No real device yet.** Device-side latency, memory and energy are not
+  measured; see `docs/DEVICE.md` for what to measure and how.
 - **Train/serve filtering nuance.** Training band-passes each full recording then
   slices windows; the API band-passes the single submitted window. Zero-phase
   filter edge effects make these slightly different — small relative to the model's

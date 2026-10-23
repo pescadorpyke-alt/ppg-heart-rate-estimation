@@ -1,0 +1,18 @@
+{
+  "model": "ds_32hz_fixed",
+  "file": "model_int8_full.tflite",
+  "subject": 7,
+  "windows": 4668,
+  "mae_bpm": 7.942541849464157,
+  "flash_bytes": 72312,
+  "preprocessor_state_bytes": 5248,
+  "activation_bytes_lower": 12288,
+  "activation_bytes_upper": 56578,
+  "preprocess_us_median": 177.2,
+  "preprocess_us_p99": 313.899,
+  "inference_us_median": 113.2,
+  "inference_us_p99": 187.86599999999999,
+  "duty_cycle_pct_median": 0.014544999999999999,
+  "cpu_affinity": "core 0",
+  "threads": 1
+}

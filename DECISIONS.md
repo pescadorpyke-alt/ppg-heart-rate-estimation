@@ -527,3 +527,44 @@ exact model, so **its accuracy is not measured directly**. The honest estimate i
 the LOSO result of the same recipe (Phase 3: INT8 9.07 ± 4.57 bpm). Anything
 measured on this final model is a sanity check (for example, that its INT8 and
 FP32 versions agree), not an accuracy claim.
+
+---
+
+## D21. Retrain on causally filtered input (D19 rule triggered)
+
+**What D19 measured** (INT8 fold models, each on its held-out subject):
+
+| Preprocessing path | Zero-phase-trained model | **Causal-trained model** |
+|---|---|---|
+| Offline (each model's own training-style input) | 9.071 ± 4.565 | 9.235 ± 4.827 |
+| Per-window zero-phase (today's API) | 9.178 ± 4.563 | 11.748 ± 5.941 |
+| **Streaming, causal (device)** | 11.474 ± 4.876 | **9.235 ± 4.827** |
+
+The zero-phase model lost 2.40 bpm under streaming and was worse on all 15
+subjects, far over the 0.5 bpm threshold set in advance, so it was retrained.
+
+**Chosen:** `ds_32hz_fixed_causal`: the same network, input options, training
+budget and seed as `ds_32hz_fixed`, trained on windows filtered causally over the
+whole recording. Those windows are bit-identical to what the streaming
+preprocessor computes on a device (checked on S1, S6 and S15), so for this model
+"offline" and "streaming" are the same input and give the same result.
+
+**Result:** on the device pipeline, MAE drops from 11.47 to **9.24 bpm** (INT8).
+On held-out S7 in the simulated device loop: 7.94 → 5.02 bpm. The causal model is
+0.16 bpm worse than the zero-phase model was on *offline* input (9.24 vs 9.07),
+which is the honest cost of being deployable: a causal filter has less
+information than a zero-phase one. Its validation MAE was slightly lower (7.92 vs
+8.08).
+
+**New trade-off this creates:** the causal model now does badly on the API's
+per-window zero-phase preprocessing (11.75 bpm). Training and serving must use the
+same filter, so the API can only serve this model after its preprocessing is
+switched to the causal streaming path. Until then the deployed API keeps the old
+model.
+
+**Alternatives:**
+- *Keep the zero-phase model, filter with zero phase on the device* using a delay
+  (wait for future samples before outputting): it adds latency to every reading
+  and still differs from whole-recording filtering at window edges.
+- *Train on a mix of both filters:* a model that tolerates both, but it is
+  evaluated on neither cleanly.
