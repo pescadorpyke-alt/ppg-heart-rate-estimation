@@ -11,9 +11,11 @@ working end-to-end pipeline (signal processing → PyTorch model → live deploy
 API), **not** state-of-the-art accuracy.
 
 > **Status:** being turned into an edge-AI project (branch `edge-ai`).
-> Evaluated with **leave-one-subject-out over all 15 subjects**: the CNN reaches
-> **9.47 ± 4.94 bpm** MAE, against 15.10 ± 6.70 for the best DSP
-> baseline and 18.57 ± 7.68 for predicting the mean (see [Results](#results)).
+> Evaluated with **leave-one-subject-out over all 15 subjects**: the edge model
+> (`ds_32hz_fixed`, 46,753 params, 1.61 M MACs per window) reaches
+> **9.00 ± 4.55 bpm** MAE, the same accuracy as the original CNN (9.47 ± 4.94)
+> at 7× less compute. The best DSP baseline gets 15.10 ± 6.70 and predicting the
+> mean 18.57 ± 7.68 (see [Results](#results)).
 > The **public API** at
 > [pescas-ppg-heart-rate.hf.space](https://pescas-ppg-heart-rate.hf.space/docs)
 > still serves the original model, trained on the old 5-subject split.
@@ -41,7 +43,9 @@ ppg-heart-rate-estimation/
 ├── src/
 │   ├── config.py         # paths, signal constants, training defaults
 │   ├── preprocessing.py  # load + cache, band-pass, window, normalize, splits
-│   ├── model.py          # 1D CNN regressor
+│   ├── model.py          # original CNN + depthwise separable edge CNN
+│   ├── profile_model.py  # params, MACs, INT8 KB vs the edge budget
+│   ├── report.py         # README tables from results/
 │   ├── train.py          # reusable training loop (fit), original fixed split
 │   ├── loso.py           # leave-one-subject-out evaluation, 15 folds
 │   ├── baseline.py       # constant + step-by-step DSP baselines
@@ -202,6 +206,43 @@ copied from Table 11 of that paper, for context.
 - The CNN is close to the 60 M-parameter Deep PPG ensemble on sitting and table
   soccer, and furthest behind on stairs, walking and cycling.
 
+### Edge-aware model variants (Phase 2)
+
+Budget per 8 s window ([`DECISIONS.md`](DECISIONS.md) D2): ≤ 5 M MACs, ≤ 256 KB
+INT8 weights, ≤ 64 KB INT8 peak activations. Each variant changes one thing from
+the one above it. All ran the same 15-fold LOSO, training budget and seed. Sizes
+are measured by [`src/profile_model.py`](src/profile_model.py) (BatchNorm folded
+into the convs); the table is printed by `python -m src.report --variants`.
+
+| Model | Change | Params | MACs | INT8 weights | Peak act. | Fits | **Val MAE** | Test MAE |
+|---|---|---|---|---|---|---|---|---|
+| `cnn_v0` | original, 64 Hz | 118,945 | 11.49 M | 115.5 KB | 24.0 KB | no | 8.12 ± 3.76 | 9.47 ± 4.94 |
+| `cnn_v0_32hz` | 32 Hz input | 118,945 | 5.75 M | 115.5 KB | 12.0 KB | no | 8.41 ± 4.41 | 8.81 ± 4.18 |
+| `ds_32hz` | depthwise separable convs | 46,753 | 1.61 M | 44.5 KB | 12.0 KB | yes | 8.49 ± 4.39 | 9.05 ± 4.33 |
+| **`ds_32hz_fixed`** | ACC scaled by 0.1 g, not z-scored | 46,753 | **1.61 M** | 44.5 KB | 12.0 KB | yes | **8.08 ± 4.05** | **9.00 ± 4.55** |
+| `ds_wide_32hz_fixed` | wider channels | 110,641 | 3.80 M | 106.2 KB | 18.0 KB | yes | 8.28 ± 4.31 | 9.18 ± 4.79 |
+
+MAE in bpm, mean ± std over the 15 subjects. **The variant is chosen on validation
+MAE, never test MAE** (D12), so the test subjects play no part in picking it.
+
+- **Chosen: `ds_32hz_fixed`.** It has the lowest validation MAE, but every gap in
+  this table is under 0.5 bpm, which I treat as a tie (one seed per variant). The
+  claim is therefore about cost: **7× fewer MACs and 2.5× fewer parameters than
+  the original CNN, at the same accuracy.**
+- **32 Hz input** halves the work with no measurable loss: the heart-rate band
+  ends at 4 Hz, far below the 16 Hz Nyquist limit (D9).
+- **Depthwise separable convs** cut MACs another 3.6× with no measurable loss
+  (D10). But MACs are not speed: in a training benchmark on this CPU the depthwise
+  model was only ~2.5× faster than the original, not 7×.
+- **Wider is not better:** spending the budget back on channels (3.80 M MACs) did
+  not help.
+- **Fixed ACC scaling** lets the model see that the wrist is still. Error at rest
+  drops (sitting 5.16 → 3.78, working 5.26 → 4.20 bpm), but rises in transitions
+  and table soccer, so overall it is about neutral (D11).
+
+Per-activity MAE (window-weighted, bpm) for the five variants is in
+`results/loso_<model>_summary.json`.
+
 ### Comparison with published results on PPG-DaLiA
 
 All numbers below are copied from the cited papers, not re-run. MAE in bpm,
@@ -217,7 +258,8 @@ mean ± std over subjects where given.
 | Deep PPG resource-constrained CNN | 9.99 ± 5.9 | 26 K params | Deep PPG, Sec. 5 |
 | Q-PPG-L, INT8 on STM32WB55 | 4.41 | 412 kB | Q-PPG, Table IV |
 | Q-PPG-S, INT4 on STM32WB55 | 7.73 | 1.9 kB | Q-PPG, Table IV |
-| **This repo: 1D CNN, FP32** | **9.47 ± 4.94** | 118,945 params | this README |
+| This repo: original 1D CNN, FP32 | 9.47 ± 4.94 | 118,945 params | this README |
+| **This repo: `ds_32hz_fixed`, FP32** | **9.00 ± 4.55** | 46,753 params, 1.61 M MACs | this README |
 
 Sources:
 - **Deep PPG:** A. Reiss, I. Indlekofer, P. Schmidt, K. Van Laerhoven,
@@ -228,11 +270,12 @@ Sources:
   Monitoring on Wearable Devices*, IEEE TBioCAS 15(6), 2021.
   [arXiv:2203.14907](https://arxiv.org/abs/2203.14907)
 
-**Where this CNN sits:** at 119 K parameters, its 9.47 ± 4.94 bpm falls between
-Deep PPG's 26 K-parameter resource-constrained CNN (9.99 ± 5.9) and its 8.5 M
-single CNN (8.82 ± 3.8). It is clearly behind the best published results, and
-Q-PPG shows that much smaller models can do better. That gap is what Phase 2
-(edge-aware model design) works on.
+**Where this repo sits:** the edge model (47 K parameters, 9.00 ± 4.55 bpm) and
+the original CNN (119 K, 9.47 ± 4.94) both fall between Deep PPG's 26 K-parameter
+resource-constrained CNN (9.99 ± 5.9) and its 8.5 M single CNN (8.82 ± 3.8). Both
+are clearly behind the best published results; Q-PPG shows that much smaller
+models can do better, with architecture search and post-processing across
+windows that this repo does not use.
 
 How comparable these are:
 - **Deep PPG** uses leave-one-session-out with one session per subject, i.e. the
@@ -296,6 +339,13 @@ python -m src.preprocessing --all     # 64,697 windows from the 15 pickles
 python -m src.baseline                # constant + DSP steps, per subject
 python -m src.diagnose_fft            # FFT error breakdown
 python -m src.loso --model cnn_v0     # 15-fold LOSO CNN (~5 h on a 2-core CPU)
+
+# Phase 2: 32 Hz inputs, then the edge variants (add --resume after a crash)
+python -m src.preprocessing --all --fs 32
+python -m src.preprocessing --all --fs 32 --acc-norm fixed
+python -m src.profile_model           # params / MACs / KB vs the budget
+python -m src.loso --model ds_32hz_fixed
+python -m src.report --variants       # Phase 2 comparison table
 ```
 
 ## API usage

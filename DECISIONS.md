@@ -190,3 +190,123 @@ variants use the same budget, so their comparison stays fair.
 **Outcome (cnn_v0, 15 folds):** no fold's best epoch was the last allowed one.
 Best epochs ranged from 1 to 11, and all but one fold stopped early. The whole
 run took 4.26 h of training. So for this model the cap did not cut training short.
+
+**Phase 2 variants:** in one fold out of 75 the best epoch was the 15th, the
+last allowed: `cnn_v0_32hz` on S5, the hardest subject. That fold may be
+slightly undertrained; every other fold peaked earlier.
+
+---
+
+## D9. Input at 32 Hz instead of 64 Hz
+
+**Chosen:** feed the model 256 samples per channel (32 Hz) instead of 512. The
+PPG is decimated by 2 after band-passing; the accelerometer is used at its native
+32 Hz instead of being upsampled.
+
+**Why it is safe:** every signal is band-passed to 0.5–4 Hz first, and 4 Hz is far
+below the 16 Hz Nyquist limit at 32 Hz. So no heart-rate information is lost, and
+the original pipeline's upsampling of ACC to 64 Hz only created interpolated
+samples.
+
+**Alternatives:** keep 64 Hz (the original), or go lower (e.g. 16 Hz, Nyquist
+8 Hz). Lower rates still fit the 4 Hz band, but leave less room for the shape of
+each pulse.
+
+**Trade-off:** every conv layer does half the work and holds half the
+activations, for free in theory. Whether the model loses accuracy is measured
+directly (`cnn_v0` vs `cnn_v0_32hz`: same network, only the rate changes).
+
+**Outcome:** MACs 11.49 M → 5.75 M. Test MAE went 9.47 → 8.81 bpm while
+validation MAE went 8.12 → 8.41. They move in opposite directions and both
+changes are small, so the reading is "no measurable loss", not "better".
+
+---
+
+## D10. Depthwise separable convolutions
+
+**Chosen:** blocks 2–4 split each conv into a depthwise conv (one filter per
+channel) and a 1×1 pointwise conv (mixes channels). The first block stays a normal
+conv because it has only 4 input channels.
+
+**Alternatives:**
+- *Just make the original CNN narrower:* simple, but cuts capacity everywhere.
+- *Fewer blocks:* cheaper, but each output sees a shorter stretch of signal.
+- *Neural architecture search, as in Q-PPG:* the strongest results, but far more
+  compute than this project has.
+
+**Trade-off:** at the same widths, MACs drop from 5.75 M to 1.61 M at 32 Hz. But
+MACs are not speed: in a CPU training benchmark the depthwise model was only
+about 2.5× faster than the original, not 7×, because depthwise convs do little
+arithmetic per memory access and libraries optimise them less. Fewer parameters
+can also mean lower accuracy, so a wider version that spends the budget back
+(`ds_wide_32hz_fixed`, 3.80 M MACs) is tested too.
+
+**Outcome:** `cnn_v0_32hz` → `ds_32hz`: params 118,945 → 46,753, MACs 5.75 M →
+1.61 M, validation MAE 8.41 → 8.49, test MAE 8.81 → 9.05. Both changes are under
+the 0.5 bpm noise threshold (D12): the model got 3.6× cheaper for no measurable
+loss. Spending the budget back did not help: `ds_wide_32hz_fixed` (3.80 M MACs)
+scored 8.28 validation / 9.18 test, against 8.08 / 9.00 for the narrow version
+with the same input. More capacity is not what limits this model.
+
+---
+
+## D11. Accelerometer scaled by a fixed 0.1 g instead of z-scored per window
+
+**Chosen:** the PPG channel is still z-scored per window (its amplitude depends on
+skin contact and is not meaningful), but the three ACC channels are divided by a
+fixed 0.1 g.
+
+**Why:** z-scoring each window rescales a still wrist's sensor noise to the same
+size as real arm motion, so the model cannot tell "no motion" from "lots of
+motion". With a fixed scale, sitting gives ACC values around 0.03 and walking or
+stairs around 1.7–1.8 (medians of per-window std, measured).
+
+**How the constant was chosen (disclosure):** I first used 1/64, from the dataset
+readme's "units of 1/64 g". That made the ACC channels almost zero, because the
+*pickles* already store ACC in g (|ACC| = 1.01 at rest, measured); the 1/64 g
+applies to the raw E4 CSV files. I then chose 0.1 g after seeing the motion range
+above. It is one physical constant, not fit to heart-rate labels.
+
+**Alternatives:** keep z-scoring (original); divide by a per-subject statistic
+(needs calibration data from each new user); add the motion strength as a 5th
+channel next to the z-scored ACC (more input, more MACs).
+
+**Trade-off:** the model now sees how strong the motion is, but depends on the
+sensor's units. A different wearable must deliver ACC in g, or be rescaled first.
+The effect is measured directly (`ds_32hz` vs `ds_32hz_fixed`).
+
+**Outcome:** overall it is close to neutral: validation MAE 8.49 → 8.08, test MAE
+9.05 → 9.00. Per activity it does what it was meant to do: error at rest drops
+(sitting 5.16 → 3.78 bpm, working 5.26 → 4.20), because the model can now see
+that the wrist is still. But error rises in transitions (10.43 → 11.24) and table
+soccer (11.62 → 12.89). Keeping it is a judgement call: a wearable spends most of
+its time at rest, so better resting accuracy is worth more than these numbers
+weight it.
+
+---
+
+## D12. Choosing a Phase 2 variant on validation MAE, not test MAE
+
+**Chosen:** each variant changes one thing from the previous one, and all run the
+same 15-fold LOSO with the same training budget (D8) and seed. The variant to
+carry into Phase 3 is the one with the lowest **mean validation MAE** across the
+15 folds. The test MAE of every variant is reported, but not used to choose.
+
+**Why:** if I picked the variant with the best test MAE, the test subjects would
+be helping to choose the model, and the reported number would be optimistic. That
+is the same mistake the old split made.
+
+**Alternatives:** pick by test MAE (simpler, optimistic); a nested
+cross-validation (cleaner, about 15× more compute).
+
+**Trade-off:** validation subjects are single people, so mean validation MAE is
+noisy too. Each variant is also trained with one seed, so differences under about
+half a bpm should be treated as ties rather than wins. Seed-to-seed variation has
+not been measured yet.
+
+**Outcome:** `ds_32hz_fixed` has the lowest mean validation MAE (8.08 ± 4.05) and
+is carried into Phase 3. Its margins over the other variants are 0.04 (`cnn_v0`),
+0.20 (`ds_wide_32hz_fixed`), 0.33 (`cnn_v0_32hz`) and 0.41 (`ds_32hz`) bpm, all
+under 0.5. So by my own rule this is a tie on accuracy, and the honest claim is:
+**7× fewer MACs and 2.5× fewer parameters than the original, at the same
+accuracy**, not "a more accurate model". Its test MAE is 9.00 ± 4.55 bpm.
