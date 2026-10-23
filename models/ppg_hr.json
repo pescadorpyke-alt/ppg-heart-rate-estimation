@@ -1,0 +1,69 @@
+{
+  "model": "ds_32hz_fixed_causal",
+  "trained_on": "PPG-DaLiA S1-S15, all windows, 6 epochs (D20)",
+  "accuracy_estimate": "LOSO of the same recipe: see results/stream_eval_ds_32hz_fixed_causal_summary.json",
+  "input": {
+    "tflite_shape_nhwc": [
+      1,
+      1,
+      256,
+      4
+    ],
+    "onnx_shape_nchw": [
+      1,
+      4,
+      1,
+      256
+    ],
+    "window": "8 s, new window every 2 s",
+    "channels": [
+      "PPG (BVP), z-scored per window",
+      "ACC x / 0.1 g",
+      "ACC y / 0.1 g",
+      "ACC z / 0.1 g"
+    ],
+    "sample_rate_hz": 32,
+    "preprocessing": "causal 4th-order Butterworth band-pass 0.5-4.0 Hz per sensor, state kept across windows (src/stream.py); PPG filtered at 64 Hz then every 2nd sample kept; ACC filtered at its native 32 Hz; ACC in g"
+  },
+  "output": "heart rate in bpm, one value per window",
+  "int8_full_quantization": {
+    "input_scale": 0.13726508617401123,
+    "input_zero_point": -4,
+    "output_scale": 0.6957263946533203,
+    "output_zero_point": -128,
+    "output_max_bpm": 177.41023063659668
+  },
+  "calibration": "500 windows spread over heart rate (D16), all subjects",
+  "files": {
+    "ppg_hr.onnx": {
+      "bytes": 189904,
+      "sha256": "eae89fd14c0aafe1d292262bd212ffab06a6cf2285611f118b07d0b939037be1"
+    },
+    "ppg_hr_fp32.tflite": {
+      "bytes": 188804,
+      "sha256": "a1532451f94e3889efb1fbe2a65f927ebe3d05a587af5a4904233c59f5c24abc"
+    },
+    "ppg_hr_int8.tflite": {
+      "bytes": 72336,
+      "sha256": "514e02d4eb085ad91ea4180d6225713993ef8f97c32ed869e3ccd63b92b14478"
+    },
+    "ppg_hr_int8_full.tflite": {
+      "bytes": 72056,
+      "sha256": "bd13a62434405123cc202424d87f7cf07c5945abd51e0a72947c44ba1fefeef0"
+    }
+  },
+  "sanity_check_on_training_data": {
+    "fp32": {
+      "max_abs_diff_vs_torch_bpm": 6.103515625e-05,
+      "median_abs_diff_vs_torch_bpm": 7.62939453125e-06
+    },
+    "int8": {
+      "max_abs_diff_vs_torch_bpm": 5.125823974609375,
+      "median_abs_diff_vs_torch_bpm": 0.5526390075683594
+    },
+    "int8_full": {
+      "max_abs_diff_vs_torch_bpm": 5.125823974609375,
+      "median_abs_diff_vs_torch_bpm": 0.5528945922851562
+    }
+  }
+}
