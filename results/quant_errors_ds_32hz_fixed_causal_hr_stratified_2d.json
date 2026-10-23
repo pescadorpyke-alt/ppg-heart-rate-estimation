@@ -1,0 +1,274 @@
+{
+  "variant": "hr_stratified_2d",
+  "percentiles_abs_diff_bpm": {
+    "p50": 0.54949951171875,
+    "p90": 1.653570532798767,
+    "p99": 3.320115327835083,
+    "p99.9": 5.27638053894043
+  },
+  "pct_windows_over": {
+    "over_1_bpm": 26.273242963352246,
+    "over_2_bpm": 6.0095522203502485,
+    "over_5_bpm": 0.13292733820733574,
+    "over_10_bpm": 0.0061826668933644535
+  },
+  "int8_output_ceiling_per_fold": [
+    {
+      "subject": 1,
+      "int8_output_max_bpm": 174.57153975963593,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 2,
+      "int8_output_max_bpm": 185.43451845645905,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 3,
+      "int8_output_max_bpm": 183.61177146434784,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 4,
+      "int8_output_max_bpm": 182.15298414230347,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 5,
+      "int8_output_max_bpm": 168.87816846370697,
+      "pct_test_true_hr_above": 3.9578403957840393,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 6,
+      "int8_output_max_bpm": 165.30686169862747,
+      "pct_test_true_hr_above": 3.6613272311212817,
+      "pct_test_fp32_pred_above": 0.6483600305110603
+    },
+    {
+      "subject": 7,
+      "int8_output_max_bpm": 160.16667991876602,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 8,
+      "int8_output_max_bpm": 176.58801555633545,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 9,
+      "int8_output_max_bpm": 171.35767221450806,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 10,
+      "int8_output_max_bpm": 182.21648633480072,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 11,
+      "int8_output_max_bpm": 165.63107550144196,
+      "pct_test_true_hr_above": 1.1059500110595002,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 12,
+      "int8_output_max_bpm": 189.28269356489182,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    },
+    {
+      "subject": 13,
+      "int8_output_max_bpm": 166.16265177726746,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.08762322015334063
+    },
+    {
+      "subject": 14,
+      "int8_output_max_bpm": 176.2614306807518,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.022341376228775692
+    },
+    {
+      "subject": 15,
+      "int8_output_max_bpm": 167.69381761550903,
+      "pct_test_true_hr_above": 0.0,
+      "pct_test_fp32_pred_above": 0.0
+    }
+  ],
+  "largest": [
+    {
+      "subject": 6,
+      "window": 1482,
+      "abs_diff": 16.75531005859375,
+      "fp32": 182.06216430664062,
+      "int8": 165.30685424804688,
+      "true": 166.42543029785156,
+      "activity": "cycling",
+      "acc_peak_0p1g": 4.039144515991211,
+      "acc_peak_pct_of_subject": 37.2234935163997
+    },
+    {
+      "subject": 6,
+      "window": 1483,
+      "abs_diff": 16.058639526367188,
+      "fp32": 181.36549377441406,
+      "int8": 165.30685424804688,
+      "true": 165.9836883544922,
+      "activity": "cycling",
+      "acc_peak_0p1g": 3.7649245262145996,
+      "acc_peak_pct_of_subject": 34.248665141113655
+    },
+    {
+      "subject": 6,
+      "window": 1386,
+      "abs_diff": 12.825180053710938,
+      "fp32": 178.1320343017578,
+      "int8": 165.30685424804688,
+      "true": 155.44757080078125,
+      "activity": "cycling",
+      "acc_peak_0p1g": 5.596516132354736,
+      "acc_peak_pct_of_subject": 57.39893211289092
+    },
+    {
+      "subject": 9,
+      "window": 1655,
+      "abs_diff": 10.19818115234375,
+      "fp32": 91.2724380493164,
+      "int8": 101.47061920166016,
+      "true": 74.12165069580078,
+      "activity": "driving",
+      "acc_peak_0p1g": 5.097107887268066,
+      "acc_peak_pct_of_subject": 50.17535655833528
+    },
+    {
+      "subject": 9,
+      "window": 1657,
+      "abs_diff": 9.225555419921875,
+      "fp32": 82.83719635009766,
+      "int8": 92.06275177001953,
+      "true": 73.14582061767578,
+      "activity": "driving",
+      "acc_peak_0p1g": 1.3769001960754395,
+      "acc_peak_pct_of_subject": 20.738835632452655
+    },
+    {
+      "subject": 9,
+      "window": 151,
+      "abs_diff": 8.507682800292969,
+      "fp32": 75.49117279052734,
+      "int8": 83.99885559082031,
+      "true": 55.88410568237305,
+      "activity": "sitting",
+      "acc_peak_0p1g": 0.09784667938947678,
+      "acc_peak_pct_of_subject": 4.769698386719663
+    },
+    {
+      "subject": 8,
+      "window": 1685,
+      "abs_diff": 8.318428039550781,
+      "fp32": 71.31930541992188,
+      "int8": 79.63773345947266,
+      "true": 69.41622924804688,
+      "activity": "driving",
+      "acc_peak_0p1g": 2.822467565536499,
+      "acc_peak_pct_of_subject": 39.435224176368585
+    },
+    {
+      "subject": 13,
+      "window": 1313,
+      "abs_diff": 7.35223388671875,
+      "fp32": 173.514892578125,
+      "int8": 166.16265869140625,
+      "true": 153.5565643310547,
+      "activity": "cycling",
+      "acc_peak_0p1g": 3.30704402923584,
+      "acc_peak_pct_of_subject": 39.23329682365827
+    },
+    {
+      "subject": 8,
+      "window": 2948,
+      "abs_diff": 6.5170440673828125,
+      "fp32": 66.19567108154297,
+      "int8": 72.71271514892578,
+      "true": 70.0310287475586,
+      "activity": "lunch",
+      "acc_peak_0p1g": 2.421978235244751,
+      "acc_peak_pct_of_subject": 35.323259846420605
+    },
+    {
+      "subject": 2,
+      "window": 428,
+      "abs_diff": 5.820709228515625,
+      "fp32": 95.25928497314453,
+      "int8": 101.07999420166016,
+      "true": 81.23870086669922,
+      "activity": "transition",
+      "acc_peak_0p1g": 7.681594371795654,
+      "acc_peak_pct_of_subject": 84.45962429860941
+    },
+    {
+      "subject": 1,
+      "window": 1604,
+      "abs_diff": 5.7271575927734375,
+      "fp32": 79.84712982177734,
+      "int8": 85.57428741455078,
+      "true": 69.16810607910156,
+      "activity": "driving",
+      "acc_peak_0p1g": 8.156537055969238,
+      "acc_peak_pct_of_subject": 79.60026069954378
+    },
+    {
+      "subject": 13,
+      "window": 1316,
+      "abs_diff": 5.4586029052734375,
+      "fp32": 171.6212615966797,
+      "int8": 166.16265869140625,
+      "true": 147.111083984375,
+      "activity": "cycling",
+      "acc_peak_0p1g": 4.236714839935303,
+      "acc_peak_pct_of_subject": 48.587075575027384
+    },
+    {
+      "subject": 8,
+      "window": 1628,
+      "abs_diff": 5.393928527832031,
+      "fp32": 80.47632598876953,
+      "int8": 85.87025451660156,
+      "true": 74.2308349609375,
+      "activity": "driving",
+      "acc_peak_0p1g": 7.385272979736328,
+      "acc_peak_pct_of_subject": 83.05672529105772
+    },
+    {
+      "subject": 3,
+      "window": 692,
+      "abs_diff": 5.08258056640625,
+      "fp32": 85.64323425292969,
+      "int8": 90.72581481933594,
+      "true": 81.03189849853516,
+      "activity": "table_soccer",
+      "acc_peak_0p1g": 1.6364351511001587,
+      "acc_peak_pct_of_subject": 25.692695214105793
+    },
+    {
+      "subject": 12,
+      "window": 1569,
+      "abs_diff": 5.0312957763671875,
+      "fp32": 75.87777709960938,
+      "int8": 80.90907287597656,
+      "true": 65.94087982177734,
+      "activity": "driving",
+      "acc_peak_0p1g": 2.471713066101074,
+      "acc_peak_pct_of_subject": 32.82751643904906
+    }
+  ]
+}
