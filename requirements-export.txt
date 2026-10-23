@@ -1,0 +1,16 @@
+# Export / quantization / benchmark environment (Phase 3), exact versions used.
+# Kept separate from requirements.txt so TensorFlow cannot break training (D13).
+# torch is the CPU build:  pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
+# then:                   pip install -r requirements-export.txt
+ai-edge-litert==2.1.2
+numpy==2.2.6
+onnx==1.20.1
+onnx2tf==2.6.9
+onnx_graphsurgeon==0.6.1
+onnxruntime==1.26.0
+onnxscript==0.6.2
+psutil==5.9.5
+scipy==1.18.1
+sng4onnx==2.0.1
+tensorflow==2.21.0
+tf_keras==2.21.0

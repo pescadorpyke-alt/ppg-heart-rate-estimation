@@ -50,6 +50,9 @@ ppg-heart-rate-estimation/
 │   ├── loso.py           # leave-one-subject-out evaluation, 15 folds
 │   ├── baseline.py       # constant + step-by-step DSP baselines
 │   ├── diagnose_fft.py   # why the naive FFT fails, per error type / activity
+│   ├── export.py         # PyTorch -> ONNX -> TFLite FP32/FP16/INT8, per fold
+│   ├── quant_errors.py   # per-window INT8 vs FP32 error, INT8 output ceiling
+│   ├── benchmark.py      # latency per format/runtime, 1 core / 1 thread
 │   ├── infer.py          # load checkpoint + predict one window
 │   └── make_example.py   # dump a real window to api/example_payload.json
 ├── results/              # small CSV/JSON results produced by the scripts above
@@ -243,6 +246,48 @@ MAE, never test MAE** (D12), so the test subjects play no part in picking it.
 Per-activity MAE (window-weighted, bpm) for the five variants is in
 `results/loso_<model>_summary.json`.
 
+### Export and quantization (Phase 3)
+
+`ds_32hz_fixed` exported PyTorch → ONNX → TensorFlow → TFLite
+([`src/export.py`](src/export.py), D13, D17). **Every fold's model is converted
+and scored on its own held-out subject**, so these are LOSO numbers like the
+rest. INT8 calibration uses 500 windows from that fold's training subjects only,
+spread evenly over heart rate (D16).
+
+| Format | MAE, bpm (15 subjects) | File size | Median latency, 1 core / 1 thread |
+|---|---|---|---|
+| PyTorch FP32 (eager) | 9.003 ± 4.549 | — | 1,323 µs |
+| ONNX FP32 (ONNX Runtime) | 9.003 ± 4.549 | 183.7 KB | 83 µs |
+| TFLite FP32 | 9.003 ± 4.549 | 184.4 KB | 57 µs |
+| TFLite FP16 | 9.004 ± 4.549 | 98.2 KB | 57 µs |
+| **TFLite INT8** (float in/out) | **9.071 ± 4.565** | **70.6 KB** | 83 µs |
+| TFLite INT8, int8 in/out (MCU style) | 9.071 ± 4.565 | 70.4 KB | 99 µs |
+
+Latency: TFLite with XNNPACK, process pinned to one core, one thread, batch 1,
+100 warm-up + 2,000 timed runs ([`src/benchmark.py`](src/benchmark.py), D14). This
+is a 3.6 GHz desktop core (Intel i3-10100), **not** a wearable: the numbers
+compare formats, they are not device latency. All variants are far inside the
+200 ms budget, and the INT8 file is well inside 256 KB.
+
+- **INT8 costs 0.07 bpm** of MAE, far under the 0.5 bpm threshold that was
+  committed *before* the results (D15), so quantization-aware training was not
+  needed.
+- **INT8 is 2.6× smaller than FP32 but not faster on this CPU** (83 vs 57 µs with
+  XNNPACK). On a desktop with fast float SIMD and a tiny model, INT8 buys size,
+  not speed.
+- **A hidden INT8 ceiling, found and fixed:** with random calibration, each fold's
+  INT8 model could not output more than 145–174 bpm, because random calibration
+  windows rarely have a high heart rate. Averages hid it (+0.04 bpm); single
+  cycling windows were up to 25 bpm off. Calibrating evenly across heart rate
+  raised the ceiling to 167–195 bpm and cut the worst window to 10.3 bpm (D16).
+- **Exported FP32 matches PyTorch** to within 0.0001 bpm on every window.
+
+Every runtime and kernel set, both export layouts: `results/benchmark_ds_32hz_fixed.csv`.
+Two anomalies on this Windows machine are kept in that file rather than hidden
+(D18): the `ai_edge_litert` 2.1.2 interpreter never applied XNNPACK and ran INT8
+in ~12 ms, and TFLite's built-in INT8 kernels (3.9 ms) were slower than its plain
+reference kernels (1.8 ms).
+
 ### Comparison with published results on PPG-DaLiA
 
 All numbers below are copied from the cited papers, not re-run. MAE in bpm,
@@ -259,7 +304,8 @@ mean ± std over subjects where given.
 | Q-PPG-L, INT8 on STM32WB55 | 4.41 | 412 kB | Q-PPG, Table IV |
 | Q-PPG-S, INT4 on STM32WB55 | 7.73 | 1.9 kB | Q-PPG, Table IV |
 | This repo: original 1D CNN, FP32 | 9.47 ± 4.94 | 118,945 params | this README |
-| **This repo: `ds_32hz_fixed`, FP32** | **9.00 ± 4.55** | 46,753 params, 1.61 M MACs | this README |
+| This repo: `ds_32hz_fixed`, FP32 | 9.00 ± 4.55 | 46,753 params, 1.61 M MACs | this README |
+| **This repo: `ds_32hz_fixed`, INT8 TFLite** | **9.07 ± 4.57** | 70.6 KB file | this README |
 
 Sources:
 - **Deep PPG:** A. Reiss, I. Indlekofer, P. Schmidt, K. Van Laerhoven,
@@ -346,6 +392,11 @@ python -m src.preprocessing --all --fs 32 --acc-norm fixed
 python -m src.profile_model           # params / MACs / KB vs the budget
 python -m src.loso --model ds_32hz_fixed
 python -m src.report --variants       # Phase 2 comparison table
+
+# Phase 3, in the export environment (TensorFlow 2.21, onnx2tf, ONNX Runtime)
+python -m src.export --model ds_32hz_fixed            # 15 folds x FP32/FP16/INT8
+python -m src.quant_errors hr_stratified_2d           # per-window INT8 error, ceilings
+python -m src.benchmark --model ds_32hz_fixed         # latency, 1 core / 1 thread
 ```
 
 ## API usage

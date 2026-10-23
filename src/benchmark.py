@@ -5,10 +5,17 @@ CPU core, every runtime uses ONE thread, batch size is 1, and each format gets
 100 warm-up runs before 2,000 timed runs. This is still a desktop CPU and is
 much faster than a microcontroller, so these numbers are NOT device latency.
 
-TFLite is measured twice:
-    default      the interpreter's default delegate (XNNPACK: SIMD-optimised)
-    reference    built-in kernels only, no default delegate (closer to a
-                 plain CPU without desktop SIMD instructions)
+TFLite runtimes ("tier"), all via TensorFlow 2.21's bundled interpreter:
+    xnnpack      default delegate (XNNPACK): SIMD-optimised kernels
+    builtin      TFLite's own optimised kernels, no delegate
+    reference    TFLite's plain reference kernels (BUILTIN_REF): no
+                 optimisation at all, the closest to a simple embedded build
+plus `litert_default`: the ai_edge_litert 2.1.2 package's interpreter, kept
+because on this Windows machine it never applied XNNPACK and ran INT8 very
+slowly (D18).
+
+Both export layouts are timed: 2d (shipped, depthwise convs become
+DEPTHWISE_CONV_2D) and 1d (grouped CONV_2D), see D17.
 
 Runs in the export environment:
     D:\\ppg-dalia-hr\\.venv-export\\Scripts\\python.exe -m src.benchmark --model ds_32hz_fixed
@@ -30,7 +37,7 @@ import numpy as np
 import torch
 
 from . import config as C
-from .export import load_fold_model
+from .export import load_fold_model, to_channels_last
 from .loso import INPUTS
 from .preprocessing import x_path
 
@@ -50,13 +57,22 @@ def timed(fn, x_list) -> np.ndarray:
     return out
 
 
-def tflite_fn(path, delegate: str):
-    from ai_edge_litert.interpreter import Interpreter, OpResolverType
+def tflite_fn(path, tier: str):
+    import warnings
 
-    kw = {}
-    if delegate == "reference":
-        kw["experimental_op_resolver_type"] = OpResolverType.BUILTIN_WITHOUT_DEFAULT_DELEGATES
-    it = Interpreter(model_path=str(path), num_threads=1, **kw)
+    import tensorflow as tf
+
+    if tier == "litert_default":
+        from ai_edge_litert.interpreter import Interpreter
+        it = Interpreter(model_path=str(path), num_threads=1)
+    else:
+        R = tf.lite.experimental.OpResolverType
+        resolver = {"xnnpack": R.AUTO, "builtin": R.BUILTIN_WITHOUT_DEFAULT_DELEGATES,
+                    "reference": R.BUILTIN_REF}[tier]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            it = tf.lite.Interpreter(model_path=str(path), num_threads=1,
+                                     experimental_op_resolver_type=resolver)
     it.allocate_tensors()
     inp, out = it.get_input_details()[0], it.get_output_details()[0]
     if inp["dtype"] == np.int8:
@@ -79,6 +95,8 @@ def main():
                     help="which fold's exported files to time (all folds share "
                          "the same architecture, so size and latency do not "
                          "depend on the fold)")
+    ap.add_argument("--calib", default="hr_stratified")
+    ap.add_argument("--layouts", default="2d,1d")
     args = ap.parse_args()
 
     try:
@@ -93,34 +111,37 @@ def main():
     X = np.load(x_path(inp["fs"], inp["acc_norm"]), mmap_mode="r")
     idx = np.random.default_rng(C.SEED).choice(len(X), 200, replace=False)
     xs_ncw = [np.asarray(X[i : i + 1], dtype=np.float32) for i in np.sort(idx)]
-    xs_nwc = [x.transpose(0, 2, 1).copy() for x in xs_ncw]
 
-    d = C.HEAVY_ROOT / "export" / args.model / f"S{args.fold}"
     model = load_fold_model(args.model, args.fold)
     import onnxruntime as ort
     so = ort.SessionOptions()
     so.intra_op_num_threads = so.inter_op_num_threads = 1
-    sess = ort.InferenceSession(str(d / "model.onnx"), so, providers=["CPUExecutionProvider"])
 
-    cases = [("pytorch_fp32", "eager", None, lambda x: model(torch.from_numpy(x)), xs_ncw),
-             ("onnx_fp32", "onnxruntime", d / "model.onnx",
-              lambda x: sess.run(None, {"x": x}), xs_ncw)]
-    for fmt in ["fp32", "fp16", "int8", "int8_full"]:
-        p = d / f"model_{fmt}.tflite"
-        for delegate in ["default", "reference"]:
-            cases.append((f"tflite_{fmt}", delegate, p, tflite_fn(p, delegate), xs_nwc))
+    # (format, runtime, layout, file, fn, inputs)
+    cases = [("pytorch_fp32", "eager", "1d", None, lambda x: model(torch.from_numpy(x)), xs_ncw)]
+    for layout in args.layouts.split(","):
+        d = C.HEAVY_ROOT / "export" / args.model / f"{args.calib}_{layout}" / f"S{args.fold}"
+        xs_onnx = [x[:, :, None, :].copy() for x in xs_ncw] if layout == "2d" else xs_ncw
+        xs_tfl = [to_channels_last(x, layout).copy() for x in xs_ncw]
+        sess = ort.InferenceSession(str(d / "model.onnx"), so, providers=["CPUExecutionProvider"])
+        cases.append(("onnx_fp32", "onnxruntime", layout, d / "model.onnx",
+                      lambda x, s=sess: s.run(None, {"x": x}), xs_onnx))
+        for fmt in ["fp32", "fp16", "int8", "int8_full"]:
+            p = d / f"model_{fmt}.tflite"
+            for tier in ["xnnpack", "builtin", "reference", "litert_default"]:
+                cases.append((f"tflite_{fmt}", tier, layout, p, tflite_fn(p, tier), xs_tfl))
 
     rows = []
     with torch.no_grad():
-        for fmt, runtime, path, fn, xs in cases:
+        for fmt, runtime, layout, path, fn, xs in cases:
             lat = timed(fn, xs)
-            r = {"format": fmt, "runtime": runtime,
+            r = {"format": fmt, "runtime": runtime, "layout": layout,
                  "bytes": path.stat().st_size if path else None,
                  "median_us": float(np.median(lat)), "p95_us": float(np.percentile(lat, 95)),
                  "p99_us": float(np.percentile(lat, 99)), "mean_us": float(lat.mean())}
             rows.append(r)
             size = f"{r['bytes'] / 1024:7.1f} KB" if r["bytes"] else "      -   "
-            print(f"{fmt:<17}{runtime:<12}{size} | median {r['median_us']:8.1f} us | "
+            print(f"{fmt:<17}{runtime:<15}{layout:<4}{size} | median {r['median_us']:8.1f} us | "
                   f"p95 {r['p95_us']:8.1f} us | p99 {r['p99_us']:8.1f} us", flush=True)
 
     import onnxruntime

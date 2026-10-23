@@ -377,3 +377,111 @@ accuracy loss if there is one).
 
 **Trade-off:** a threshold set in advance means the decision cannot be bent to
 fit the result.
+
+**Outcome (15 folds, shipped 2-D export with HR-stratified calibration):** INT8
+MAE 9.071 ± 4.565 bpm vs FP32 9.003 ± 4.549, a difference of +0.068 bpm. That is
+well under 0.5 bpm, so **QAT was not tried.**
+
+---
+
+## D16. INT8 calibration windows spread evenly over heart rate
+
+**Chosen:** the 500 INT8 calibration windows are drawn from the fold's training
+subjects with an equal share per 10 bpm heart-rate bin (`--calib hr_stratified`
+in `src/export.py`), instead of uniformly at random.
+
+**Why (found after the first 15-fold run, disclosed):** INT8 stores every
+tensor's value range, learned from the calibration windows. With 500 random
+windows only about 10 are above 150 bpm, so the model's output range came out too
+narrow: the largest heart rate each fold's INT8 model could output was 144.8–173.9
+bpm, though training data goes up to 187 bpm. The averages hid this (INT8 was
+only +0.04 bpm worse than FP32), but on single windows INT8 sat flat at its
+ceiling and was up to 25.1 bpm away from FP32, all of them during cycling. Up to
+3.4 % of a test subject's windows had a true heart rate above their fold's
+ceiling.
+
+**What changed** (all 15 folds, measured on the 1-D export; D17 later moved to a
+2-D export, where stratified INT8 scores 9.071):
+
+| | Random | HR-stratified |
+|---|---|---|
+| Calibration windows above 150 bpm (of 500) | ~10 | 132 |
+| INT8 output ceiling across folds | 144.8–173.9 bpm | 167.5–194.5 bpm |
+| Worst window, \|INT8 − FP32\| | 25.09 bpm | 10.32 bpm |
+| Windows with \|INT8 − FP32\| > 10 bpm | 0.02 % | 0.00 % |
+| INT8 test MAE (FP32: 9.003) | 9.041 | 9.065 |
+
+With stratified calibration, the ceiling changes the answer on at most 0.23 % of
+any subject's windows (S6). Where a true heart rate is still above the ceiling,
+the FP32 model does not predict that high either: the model itself
+under-predicts very high heart rates, which is a model limitation, not a
+quantization one.
+
+**Alternatives:**
+- *More random calibration windows:* would include more high-HR windows, but only
+  by chance, and makes conversion slower.
+- *Keep the last layer in float:* removes the output ceiling entirely, but adds a
+  float op to an otherwise all-integer model, which a microcontroller may not
+  support well.
+- *Predict a normalised target* (e.g. (HR − 100) / 50) and rescale outside the
+  model: would not change the clipping, only move where it happens.
+
+**Trade-off:** the mean INT8 MAE is 0.024 bpm worse than with random calibration
+(9.065 vs 9.041), well within noise. In exchange the model no longer has a hidden
+ceiling around 145 bpm, which matters most exactly when the user is exercising.
+I would rather report a slightly worse average than ship a model that silently
+cannot follow a high heart rate.
+
+---
+
+## D17. Export a 2-D copy of the network (Conv1d → Conv2d with 1×k kernels)
+
+**Chosen:** before export, `src/model.py:to_2d()` rebuilds the trained 1-D model
+from 2-D layers with the same weights (input `(1, 4, 1, 256)`). In PyTorch the
+two give identical outputs (max difference 0.0 bpm on 256 windows).
+
+**Why (found while checking the benchmark):** the ONNX → TFLite converter turned
+every 1-D depthwise conv into a *grouped* `CONV_2D`. TFLite has dedicated kernels
+for `DEPTHWISE_CONV_2D`, which the 2-D copy produces, but not for grouped
+`CONV_2D`. Measured effect, one core, one thread:
+
+| Runtime | 1-D export | 2-D export |
+|---|---|---|
+| ONNX Runtime, FP32 | 149 µs | 83 µs |
+| TFLite built-in kernels, FP32 | 384 µs | 292 µs |
+| TFLite XNNPACK, FP32 | 56.7 µs | 56.8 µs |
+| INT8 file size | 71.8 KB | 70.6 KB |
+
+XNNPACK already handled the grouped conv well, so it gains nothing; every other
+runtime gets faster.
+
+**Alternatives:** keep the 1-D model and accept slower kernels on runtimes other
+than XNNPACK; or write the model with `Conv2d` from the start (one code path, but
+every training-side shape becomes 4-D for no training benefit).
+
+**Trade-off:** one extra conversion step, guarded by an exact-equality check. The
+accuracy of the 2-D export was re-measured on all 15 folds rather than assumed:
+INT8 9.071 (2-D) vs 9.065 (1-D), FP32 identical.
+
+---
+
+## D18. Which TFLite interpreter the numbers come from
+
+**Chosen:** accuracy and latency use the interpreter bundled with TensorFlow 2.21
+(`tf.lite.Interpreter`), in three tiers: XNNPACK (default), TFLite built-in
+kernels, and plain reference kernels. The `ai_edge_litert` 2.1.2 interpreter is
+timed too, but only as a recorded anomaly.
+
+**Why (measured):** on this Windows machine, `ai_edge_litert` 2.1.2 never applied
+the XNNPACK delegate (its default and no-delegate timings were identical) and ran
+INT8 in about 12 ms per window, against 83 µs for the same file in TensorFlow's
+interpreter with XNNPACK. Benchmarking only with it would have reported INT8 as
+roughly 40× slower than FP32, which is a property of that build, not of the model.
+
+**Also measured, not explained:** with TFLite's built-in kernels (no XNNPACK),
+INT8 takes 3.9 ms, slower than the plain reference kernels (1.8 ms). I report this
+as measured on this Windows build and do not claim a cause.
+
+**Trade-off:** `tf.lite.Interpreter` is deprecated in favour of LiteRT, so this
+choice may need revisiting. Until then, one table shows all four runtimes, so the
+anomalies are visible instead of hidden behind one number.

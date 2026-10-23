@@ -1,0 +1,38 @@
+{
+  "pytorch_fp32": {
+    "mae_mean_over_subjects": 9.003018506368,
+    "mae_std_over_subjects": 4.549086432851207,
+    "bytes": null,
+    "max_abs_diff_vs_torch": 0.0
+  },
+  "onnx_fp32": {
+    "mae_mean_over_subjects": 9.003018983205159,
+    "mae_std_over_subjects": 4.549086631028405,
+    "bytes": 187580,
+    "max_abs_diff_vs_torch": 9.1552734375e-05
+  },
+  "tflite_fp32": {
+    "mae_mean_over_subjects": 9.003018856048584,
+    "mae_std_over_subjects": 4.549086651961605,
+    "bytes": 189972,
+    "max_abs_diff_vs_torch": 3.0517578125e-05
+  },
+  "tflite_fp16": {
+    "mae_mean_over_subjects": 9.004107062021891,
+    "mae_std_over_subjects": 4.548717468256641,
+    "bytes": 102092,
+    "max_abs_diff_vs_torch": 0.0821380615234375
+  },
+  "tflite_int8": {
+    "mae_mean_over_subjects": 9.0410506884257,
+    "mae_std_over_subjects": 4.559823020925259,
+    "bytes": 73520,
+    "max_abs_diff_vs_torch": 25.092117309570312
+  },
+  "tflite_int8_full": {
+    "mae_mean_over_subjects": 9.041060447692871,
+    "mae_std_over_subjects": 4.559815780867013,
+    "bytes": 73224,
+    "max_abs_diff_vs_torch": 25.092117309570312
+  }
+}

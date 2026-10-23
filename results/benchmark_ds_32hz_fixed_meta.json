@@ -1,0 +1,20 @@
+{
+  "model": "ds_32hz_fixed",
+  "fold_files": "S1",
+  "input_shape": [
+    4,
+    256
+  ],
+  "warmup": 100,
+  "runs": 2000,
+  "threads": 1,
+  "cpu_affinity": "core 0",
+  "batch": 1,
+  "cpu": "Intel64 Family 6 Model 165 Stepping 3, GenuineIntel",
+  "machine": "AMD64",
+  "os": "Windows-10-10.0.19045-SP0",
+  "python": "3.12.10",
+  "torch": "2.12.1+cpu",
+  "onnxruntime": "1.26.0",
+  "tensorflow": "2.21.0"
+}

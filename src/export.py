@@ -13,14 +13,15 @@ For each fold (test subject s):
        fp16        weights stored as float16 (dequantized at load on CPU)
        int8        weights + activations int8, float32 input/output
        int8_full   everything int8, including input and output (MCU style)
-     INT8 calibration: 500 random windows from the fold's TRAINING subjects only.
+     INT8 calibration: 500 windows from the fold's TRAINING subjects only,
+     spread evenly over heart rate by default (--calib, see D16).
   4. run every format on the held-out subject and on a fixed check batch,
      recording test MAE and the max difference from PyTorch.
 
 Outputs:
-    <HEAVY_ROOT>/export/<model>/S{s}/{model.onnx, *.tflite}
-    results/quant_<model>.csv          per fold and format: test MAE, size, max |diff|
-    results/quant_<model>_summary.json mean +/- std over folds per format
+    <HEAVY_ROOT>/export/<model>/<calib>_<layout>/S{s}/{model.onnx, *.tflite}
+    results/quant_<model>_<calib>_<layout>.csv          per fold and format: test MAE, size, max |diff|
+    results/quant_<model>_<calib>_<layout>_summary.json mean +/- std over folds per format
 """
 from __future__ import annotations
 
@@ -40,9 +41,37 @@ import torch
 
 from . import config as C
 from .loso import INPUTS, MODELS, val_subject_for
+from .model import to_2d
 from .preprocessing import x_path
 
 N_CALIB = 500
+
+
+def to_channels_last(x: np.ndarray, layout: str) -> np.ndarray:
+    """(n, C, T) -> TFLite input layout: (n, T, C) for 1d, (n, 1, T, C) for 2d."""
+    return x.transpose(0, 2, 1) if layout == "1d" else x[:, :, None, :].transpose(0, 2, 3, 1)
+
+
+def calib_indices(train_idx, y, mode: str, rng) -> np.ndarray:
+    """Pick N_CALIB calibration windows from the fold's TRAINING windows.
+
+    random:        uniform random sample (first version).
+    hr_stratified: equal share per 10 bpm heart-rate bin across the training
+                   range, so rare high-HR windows are always included. INT8
+                   sets its output range from the calibration predictions, so
+                   a random sample left a ceiling of 145-174 bpm (D16).
+    """
+    if mode == "random":
+        return np.sort(rng.choice(train_idx, N_CALIB, replace=False))
+    hr = y[train_idx]
+    edges = np.arange(np.floor(hr.min() / 10) * 10, hr.max() + 10, 10)
+    bins = [train_idx[(hr >= lo) & (hr < lo + 10)] for lo in edges[:-1]]
+    bins = [b for b in bins if len(b)]
+    quota = N_CALIB // len(bins)
+    picked = np.concatenate([rng.choice(b, min(quota, len(b)), replace=False) for b in bins])
+    rest = np.setdiff1d(train_idx, picked)
+    picked = np.concatenate([picked, rng.choice(rest, N_CALIB - len(picked), replace=False)])
+    return np.sort(picked)
 FORMATS = ["fp32", "fp16", "int8", "int8_full"]
 
 
@@ -96,11 +125,15 @@ def to_tflite(saved_model: Path, fmt: str, calib_nwc: np.ndarray) -> bytes:
 
 
 def make_interpreter(model_bytes: bytes, threads: int = 1):
-    try:
-        from ai_edge_litert.interpreter import Interpreter
-    except ImportError:   # older stacks: the interpreter still ships with TF
-        from tensorflow.lite.python.interpreter import Interpreter
-    return Interpreter(model_content=model_bytes, num_threads=threads)
+    """TFLite interpreter. Uses the one bundled with TensorFlow 2.21, where the
+    XNNPACK delegate loads; the ai_edge_litert 2.1.2 Windows wheel never applied
+    XNNPACK and ran INT8 ~160x slower in our measurements (D18)."""
+    import warnings
+
+    import tensorflow as tf
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")   # tf.lite.Interpreter deprecation notice
+        return tf.lite.Interpreter(model_content=model_bytes, num_threads=threads)
 
 
 def run_tflite(model_bytes: bytes, x_nwc: np.ndarray) -> np.ndarray:
@@ -130,6 +163,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="ds_32hz_fixed", choices=sorted(MODELS))
     ap.add_argument("--subjects", default="", help="comma list (default: all 15)")
+    ap.add_argument("--calib", default="hr_stratified", choices=["random", "hr_stratified"])
+    ap.add_argument("--layout", default="2d", choices=["1d", "2d"],
+                    help="2d: export the numerically identical Conv2d copy (to_2d), "
+                         "so depthwise convs become DEPTHWISE_CONV_2D (D17)")
     args = ap.parse_args()
     subjects = ([int(s) for s in args.subjects.split(",")] if args.subjects
                 else C.ALL_SUBJECTS)
@@ -144,15 +181,17 @@ def main():
     rows = []
     for s in subjects:
         t0 = time.perf_counter()
-        out_dir = C.HEAVY_ROOT / "export" / args.model / f"S{s}"
+        out_dir = C.HEAVY_ROOT / "export" / args.model / f"{args.calib}_{args.layout}" / f"S{s}"
         if out_dir.exists():
             shutil.rmtree(out_dir)
         out_dir.mkdir(parents=True)
 
         model = load_fold_model(args.model, s)
+        if args.layout == "2d":
+            model = to_2d(model)
         v = val_subject_for(s)
         train_idx = np.flatnonzero((subj != s) & (subj != v))
-        calib = np.asarray(X[np.sort(rng.choice(train_idx, N_CALIB, replace=False))])
+        calib = np.asarray(X[calib_indices(train_idx, y, args.calib, rng)])
         test_idx = np.flatnonzero(subj == s)
         x_test = np.asarray(X[test_idx])
 
@@ -161,12 +200,15 @@ def main():
         mae_torch = float(np.abs(pred_torch - y[test_idx]).mean())
 
         onnx_path = out_dir / "model.onnx"
-        to_onnx(model, inp["shape"], onnx_path)
+        c, T = inp["shape"]
+        onnx_shape = (c, 1, T) if args.layout == "2d" else (c, T)
+        to_onnx(model, onnx_shape, onnx_path)
+        x_test_onnx = x_test[:, :, None, :] if args.layout == "2d" else x_test
         import onnxruntime as ort
         so = ort.SessionOptions()
         so.intra_op_num_threads = 1
         sess = ort.InferenceSession(str(onnx_path), so, providers=["CPUExecutionProvider"])
-        pred_onnx = np.array([sess.run(None, {"x": x_test[i:i + 1]})[0].reshape(-1)[0]
+        pred_onnx = np.array([sess.run(None, {"x": x_test_onnx[i:i + 1]})[0].reshape(-1)[0]
                               for i in range(len(x_test))], dtype=np.float32)
         rows.append({"test_subject": s, "format": "pytorch_fp32", "test_mae": mae_torch,
                      "bytes": None, "max_abs_diff_vs_torch": 0.0})
@@ -176,8 +218,9 @@ def main():
                      "max_abs_diff_vs_torch": float(np.abs(pred_onnx - pred_torch).max())})
 
         saved = to_saved_model(onnx_path, out_dir / "saved_model")
-        x_test_nwc = x_test.transpose(0, 2, 1)
-        calib_nwc = calib.transpose(0, 2, 1)
+        # TFLite is channels-last: (n, T, 4) for 1d, (n, 1, T, 4) for 2d.
+        x_test_nwc = to_channels_last(x_test, args.layout)
+        calib_nwc = to_channels_last(calib, args.layout)
         for fmt in FORMATS:
             blob = to_tflite(saved, fmt, calib_nwc)
             (out_dir / f"model_{fmt}.tflite").write_bytes(blob)
@@ -192,7 +235,9 @@ def main():
               + f"  ({time.perf_counter() - t0:.0f} s)", flush=True)
 
     C.RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    tag = args.model if len(subjects) == len(C.ALL_SUBJECTS) else f"{args.model}_partial"
+    tag = f"{args.model}_{args.calib}_{args.layout}"
+    if len(subjects) != len(C.ALL_SUBJECTS):
+        tag += "_partial"
     with open(C.RESULTS_DIR / f"quant_{tag}.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
