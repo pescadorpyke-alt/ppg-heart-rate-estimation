@@ -485,3 +485,45 @@ as measured on this Windows build and do not claim a cause.
 **Trade-off:** `tf.lite.Interpreter` is deprecated in favour of LiteRT, so this
 choice may need revisiting. Until then, one table shows all four runtimes, so the
 anomalies are visible instead of hidden behind one number.
+
+---
+
+## D19. Streaming (causal) preprocessing on the device, and when to retrain for it (rule set before the results)
+
+**The problem:** training band-passes each *whole* recording with a zero-phase
+filter (`sosfiltfilt`), which runs the filter forwards and then backwards, so
+every output sample depends on future samples. A wearable cannot do that: it has
+to filter each sample as it arrives (`sosfilt`, causal, keeping the filter state
+between windows). The existing API does a third thing: it zero-phase filters each
+8 s window on its own, which adds edge effects at both ends of the window.
+
+**Chosen:** measure all three on held-out subjects with the INT8 fold models
+(fold *s* model on subject *s* only):
+1. *offline*: training-time preprocessing (the Phase 3 result, 9.071 bpm);
+2. *per-window*: what `api/main.py` does today;
+3. *streaming*: a causal filter over the continuous stream, as a device would run.
+
+**Rule, committed before running it:** if streaming is more than **0.5 bpm**
+worse than offline (mean over the 15 subjects), retrain with causal filtering in
+training so training and device see the same signal. Otherwise keep the model and
+document the gap.
+
+**Trade-off:** retraining costs another 15-fold run (about 5 h here). Not
+measuring it would mean the reported 9.07 bpm is for a pipeline no device can run.
+
+---
+
+## D20. One deployable model: all 15 subjects, fixed 5 epochs
+
+**Chosen:** the shipped model is `ds_32hz_fixed` trained on all 15 subjects for a
+fixed 5 epochs: the median best epoch across its 15 LOSO folds (values 1–11).
+
+**Alternatives:** ship one of the fold models (trained on 13 subjects, so less
+data); keep one subject aside for early stopping (one fewer subject, and the stop
+point depends on which subject).
+
+**Trade-off:** with every subject in training there is no test data left for this
+exact model, so **its accuracy is not measured directly**. The honest estimate is
+the LOSO result of the same recipe (Phase 3: INT8 9.07 ± 4.57 bpm). Anything
+measured on this final model is a sanity check (for example, that its INT8 and
+FP32 versions agree), not an accuracy claim.
