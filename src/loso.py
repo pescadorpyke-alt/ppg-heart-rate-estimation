@@ -40,6 +40,8 @@ MODELS = {
     "ds_32hz": DSHeartRateCNN,         # depthwise separable blocks 2-4
     "ds_32hz_fixed": DSHeartRateCNN,   # same, ACC scaled by 0.1 g, not z-scored
     "ds_wide_32hz_fixed": partial(DSHeartRateCNN, widths=(48, 96, 192, 256)),
+    # Phase 4: same as ds_32hz_fixed, trained on causally filtered input (D21).
+    "ds_32hz_fixed_causal": DSHeartRateCNN,
 }
 # Input option per model: sample rate and ACC normalisation (preprocessing.py).
 INPUTS = {
@@ -48,6 +50,8 @@ INPUTS = {
     "ds_32hz": {"fs": 32, "acc_norm": "zscore", "shape": (4, 256)},
     "ds_32hz_fixed": {"fs": 32, "acc_norm": "fixed", "shape": (4, 256)},
     "ds_wide_32hz_fixed": {"fs": 32, "acc_norm": "fixed", "shape": (4, 256)},
+    "ds_32hz_fixed_causal": {"fs": 32, "acc_norm": "fixed", "shape": (4, 256),
+                             "filt": "causal"},
 }
 
 
@@ -76,7 +80,8 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     inp = INPUTS[args.model]
-    X = torch.from_numpy(np.load(x_path(inp["fs"], inp["acc_norm"])))
+    X = torch.from_numpy(np.load(x_path(inp["fs"], inp["acc_norm"],
+                                        inp.get("filt", "zerophase"))))
     assert tuple(X.shape[1:]) == inp["shape"], (X.shape, inp)
     meta = np.load(C.PROCESSED_DIR / "all_meta.npz")
     y = torch.from_numpy(meta["y"])

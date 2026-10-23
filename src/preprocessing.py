@@ -22,7 +22,7 @@ from __future__ import annotations
 import pickle
 
 import numpy as np
-from scipy.signal import butter, sosfiltfilt
+from scipy.signal import butter, sosfilt, sosfilt_zi, sosfiltfilt
 
 from . import config as C
 
@@ -87,6 +87,18 @@ def _bandpass_sos(fs: int):
         btype="band",
         output="sos",
     )
+
+
+def bandpass_causal(signal: np.ndarray, fs: int) -> np.ndarray:
+    """Causal band-pass along axis 0 (each output depends only on past samples),
+    started in steady state at the first sample. Identical to what
+    stream.StreamingPreprocessor computes chunk by chunk (checked), so training
+    on it matches a device that filters as samples arrive (D19, D21)."""
+    sos = _bandpass_sos(fs)
+    x = np.asarray(signal, dtype=np.float64)
+    zi = sosfilt_zi(sos)
+    zi = zi * x[0] if x.ndim == 1 else zi[:, :, None] * x[0][None, None, :]
+    return sosfilt(sos, x, axis=0, zi=zi)[0]
 
 
 def bandpass(signal: np.ndarray, fs: int) -> np.ndarray:
@@ -182,7 +194,8 @@ def window_activity(activity: np.ndarray, k: int) -> int:
 
 
 def windows_for_subject(subject_id: int, return_meta: bool = False,
-                        fs_out: int = 64, acc_norm: str = "zscore"):
+                        fs_out: int = 64, acc_norm: str = "zscore",
+                        filt: str = "zerophase"):
     """Return (X, y) for one subject. X: (n, 4, T) float32, y: (n,) float32.
 
     T = 512 for fs_out=64 (default), 256 for fs_out=32; see assemble_window.
@@ -195,8 +208,11 @@ def windows_for_subject(subject_id: int, return_meta: bool = False,
     bvp, acc, labels = data["bvp"], data["acc"], data["label"]
 
     # Filter full signals once (zero-phase), then slice windows.
-    bvp_f = bandpass(bvp, C.FS_PPG)
-    acc_f = bandpass(acc, C.FS_ACC)
+    # zerophase: training default (needs future samples, offline only);
+    # causal: what a streaming device computes (D21).
+    bp = bandpass_causal if filt == "causal" else bandpass
+    bvp_f = bp(bvp, C.FS_PPG)
+    acc_f = bp(acc, C.FS_ACC)
 
     ppg_step = C.WINDOW_STRIDE_S * C.FS_PPG   # 128
     acc_step = C.WINDOW_STRIDE_S * C.FS_ACC   # 64
@@ -229,15 +245,16 @@ def windows_for_subject(subject_id: int, return_meta: bool = False,
     return X, y, meta
 
 
-def x_path(fs_out: int = 64, acc_norm: str = "zscore"):
+def x_path(fs_out: int = 64, acc_norm: str = "zscore", filt: str = "zerophase"):
     """Where build_all saves X for an input option (original input: all_X.npy)."""
-    if (fs_out, acc_norm) == (64, "zscore"):
+    if (fs_out, acc_norm, filt) == (64, "zscore", "zerophase"):
         return C.PROCESSED_DIR / "all_X.npy"
-    return C.PROCESSED_DIR / f"all_X_{fs_out}hz_{acc_norm}.npy"
+    suffix = "" if filt == "zerophase" else f"_{filt}"
+    return C.PROCESSED_DIR / f"all_X_{fs_out}hz_{acc_norm}{suffix}.npy"
 
 
-def build_all(subjects=None, fs_out: int = 64,
-              acc_norm: str = "zscore") -> dict[str, np.ndarray]:
+def build_all(subjects=None, fs_out: int = 64, acc_norm: str = "zscore",
+              filt: str = "zerophase") -> dict[str, np.ndarray]:
     """Windows for every subject, with subject ID and metadata per window.
 
     Used for leave-one-subject-out evaluation, so no train/val split here.
@@ -246,7 +263,7 @@ def build_all(subjects=None, fs_out: int = 64,
     parts = {"X": [], "y": [], "subject": [], "activity": [], "scale": []}
     for s in subjects:
         Xs, ys, meta = windows_for_subject(s, return_meta=True, fs_out=fs_out,
-                                           acc_norm=acc_norm)
+                                           acc_norm=acc_norm, filt=filt)
         parts["X"].append(Xs)
         parts["y"].append(ys)
         parts["subject"].append(np.full(len(ys), s, dtype=np.int8))
@@ -283,15 +300,15 @@ def build_split(
     }
 
 
-def main_all(fs_out: int = 64, acc_norm: str = "zscore"):
+def main_all(fs_out: int = 64, acc_norm: str = "zscore", filt: str = "zerophase"):
     """All 15 subjects -> X array (see x_path) + all_meta.npz.
 
     The metadata (labels, subject, activity, scale) does not depend on the input
     option, so one all_meta.npz serves every X file.
     """
     C.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    d = build_all(fs_out=fs_out, acc_norm=acc_norm)
-    out = x_path(fs_out, acc_norm)
+    d = build_all(fs_out=fs_out, acc_norm=acc_norm, filt=filt)
+    out = x_path(fs_out, acc_norm, filt)
     np.save(out, d.pop("X"))
     np.savez(C.PROCESSED_DIR / "all_meta.npz", **d)
     print(f"\nSaved {len(d['y'])} windows to {out}")
@@ -310,11 +327,12 @@ def main():
 if __name__ == "__main__":
     import sys
 
-    # python -m src.preprocessing --all [--fs 32] [--acc-norm fixed]
+    # python -m src.preprocessing --all [--fs 32] [--acc-norm fixed] [--filter causal]
     args = sys.argv[1:]
     if "--all" in args:
         fs = int(args[args.index("--fs") + 1]) if "--fs" in args else 64
         norm = args[args.index("--acc-norm") + 1] if "--acc-norm" in args else "zscore"
-        main_all(fs, norm)
+        filt = args[args.index("--filter") + 1] if "--filter" in args else "zerophase"
+        main_all(fs, norm, filt)
     else:
         main()

@@ -173,7 +173,7 @@ def main():
     torch.set_num_threads(1)
 
     inp = INPUTS[args.model]
-    X = np.load(x_path(inp["fs"], inp["acc_norm"]), mmap_mode="r")
+    X = np.load(x_path(inp["fs"], inp["acc_norm"], inp.get("filt", "zerophase")), mmap_mode="r")
     meta = np.load(C.PROCESSED_DIR / "all_meta.npz")
     y, subj = meta["y"], meta["subject"]
     rng = np.random.default_rng(C.SEED)

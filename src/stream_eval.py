@@ -30,13 +30,14 @@ from .loso import INPUTS
 from .preprocessing import load_wrist, preprocess_window, x_path
 from .stream import stream_subject
 
-MODEL, VARIANT = "ds_32hz_fixed", "hr_stratified_2d"
+VARIANT = "hr_stratified_2d"
 PATHS = ["offline", "per_window", "streaming"]
 
 
-def main():
+def main(MODEL: str = "ds_32hz_fixed"):
     inp = INPUTS[MODEL]
-    X = np.load(x_path(inp["fs"], inp["acc_norm"]), mmap_mode="r")
+    # "offline" = the windows this model was trained on (zero-phase or causal).
+    X = np.load(x_path(inp["fs"], inp["acc_norm"], inp.get("filt", "zerophase")), mmap_mode="r")
     meta = np.load(C.PROCESSED_DIR / "all_meta.npz")
     y, subj, act = meta["y"], meta["subject"], meta["activity"]
     pred = {(p, f): np.full(len(y), np.nan) for p in PATHS for f in ("fp32", "int8")}
@@ -100,4 +101,4 @@ def main():
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    main()
+    main(sys.argv[1] if len(sys.argv) > 1 else "ds_32hz_fixed")

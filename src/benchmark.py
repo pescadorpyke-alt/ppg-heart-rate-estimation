@@ -108,7 +108,7 @@ def main():
     torch.set_num_threads(1)
 
     inp = INPUTS[args.model]
-    X = np.load(x_path(inp["fs"], inp["acc_norm"]), mmap_mode="r")
+    X = np.load(x_path(inp["fs"], inp["acc_norm"], inp.get("filt", "zerophase")), mmap_mode="r")
     idx = np.random.default_rng(C.SEED).choice(len(X), 200, replace=False)
     xs_ncw = [np.asarray(X[i : i + 1], dtype=np.float32) for i in np.sort(idx)]
 

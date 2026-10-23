@@ -24,7 +24,7 @@ from .preprocessing import x_path
 def main(model: str = "ds_32hz_fixed", variant: str = "hr_stratified_2d"):
     from .export import make_interpreter, to_channels_last
     inp = INPUTS[model]
-    X = np.load(x_path(inp["fs"], inp["acc_norm"]), mmap_mode="r")
+    X = np.load(x_path(inp["fs"], inp["acc_norm"], inp.get("filt", "zerophase")), mmap_mode="r")
     meta = np.load(C.PROCESSED_DIR / "all_meta.npz")
     y, subj, act = meta["y"], meta["subject"], meta["activity"]
 
