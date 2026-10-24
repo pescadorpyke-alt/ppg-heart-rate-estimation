@@ -1,6 +1,6 @@
 # Edge heart-rate estimation from wrist PPG
 
-[![CI](https://github.com/pescadorpyke-alt/ppg-heart-rate-estimation/actions/workflows/ci.yml/badge.svg?branch=edge-ai)](https://github.com/pescadorpyke-alt/ppg-heart-rate-estimation/actions/workflows/ci.yml)
+[![CI](https://github.com/pescadorpyke-alt/ppg-heart-rate-estimation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pescadorpyke-alt/ppg-heart-rate-estimation/actions/workflows/ci.yml)
 
 **A 70 KB INT8 neural network that estimates heart rate every 2 s from a wrist
 PPG sensor and accelerometer, evaluated on held-out people with the same
