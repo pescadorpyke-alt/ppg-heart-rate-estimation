@@ -1,10 +1,11 @@
-# Inference-only deps for the Lambda image (torch installed separately from the
-# CPU index in the Dockerfile to avoid pulling multi-GB CUDA wheels).
+# Inference-only deps for the Lambda image (no PyTorch: the API runs
+# models/ppg_hr.onnx with ONNX Runtime).
 # Shared packages are pinned to the versions used everywhere else; mangum and
 # boto3 keep ranges because this image has not been rebuilt or re-tested.
 numpy==2.5.4
 scipy==1.18.1
 fastapi==0.156.4
 pydantic==2.14.1
+onnxruntime==1.26.0
 mangum>=0.18,<1
 boto3>=1.35,<2

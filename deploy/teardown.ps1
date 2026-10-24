@@ -8,7 +8,7 @@ param(
   [string]$Repo     = "ppg-hr-api",
   [string]$Function = "ppg-hr-api",
   [string]$Bucket   = "",
-  [string]$ModelKey = "models/best.pt"
+  [string]$ModelKey = "models/ppg_hr.onnx"
 )
 $ErrorActionPreference = "Continue"
 function Step($m) { Write-Host "`n=== $m ===" -ForegroundColor Yellow }

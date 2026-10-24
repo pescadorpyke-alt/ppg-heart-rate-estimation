@@ -28,7 +28,7 @@ here.
 
 1. **AWS CLI v2** configured: `aws configure` (set an access key + region, e.g. `us-east-1`).
 2. **Docker Desktop** running.
-3. A trained checkpoint at `D:\ppg-dalia-hr\checkpoints\best.pt` (`python -m src.train`).
+3. The committed model `models/ppg_hr.onnx` (run the script from the project root).
 
 ## Deploy
 
@@ -45,7 +45,7 @@ The script (idempotent — safe to re-run) will:
 3. Create an **S3** bucket (`ppg-hr-model-<account>-<region>`) and upload the model.
 4. Create an **IAM role** (basic execution + `s3:GetObject` scoped to that bucket).
 5. Create/update the **Lambda** function (container image, 2048 MB, 30 s timeout)
-   with env vars `MODEL_S3_BUCKET`, `MODEL_S3_KEY`, `MODEL_LOCAL_PATH=/tmp/best.pt`.
+   with env vars `MODEL_S3_BUCKET`, `MODEL_S3_KEY`, `MODEL_LOCAL_PATH=/tmp/ppg_hr.onnx`.
 6. Create a public **Function URL** and print it.
 
 Then test (the script prints these with your real URL):
@@ -66,12 +66,12 @@ Removes the Function URL, Lambda, IAM role, S3 object+bucket, and ECR repo.
 
 ## Notes / gotchas
 
-- **Only `/tmp` is writable on Lambda** — hence `MODEL_LOCAL_PATH=/tmp/best.pt`.
-- **Image size:** PyTorch is installed CPU-only (from the PyTorch CPU index) to
-  keep the image well under Lambda's 10 GB limit.
-- **Cold start:** importing torch + loading the model takes a few seconds on the
+- **Only `/tmp` is writable on Lambda** — hence `MODEL_LOCAL_PATH=/tmp/ppg_hr.onnx`.
+- **Image size:** no PyTorch in the image; the API runs `models/ppg_hr.onnx` with
+  ONNX Runtime (DECISIONS.md D23). The image has not been rebuilt since that change.
+- **Cold start:** importing ONNX Runtime + loading the model takes a moment on the
   first call; subsequent calls (warm) respond in well under a second.
-- **Python versions:** the image uses Python 3.12 (Lambda runtime); the checkpoint
-  is portable, so training on 3.14 locally is fine.
+- **Python versions:** the image uses Python 3.12 (Lambda runtime); the model is an
+  ONNX file, independent of the Python or PyTorch version used to train it.
 - **Cost ceiling:** even with generous demo traffic this stays within the
-  always-free Lambda tier; S3 storage for a ~0.5 MB model is negligible.
+  always-free Lambda tier; S3 storage for a ~186 KB model is negligible.

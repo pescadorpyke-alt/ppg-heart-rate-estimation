@@ -125,3 +125,32 @@ def test_window_activity_is_majority_vote():
     act = np.array([1] * 8 + [2] * 24 + [3] * 40, dtype=float)   # 4 Hz labels
     assert window_activity(act, 0) == 2      # window 0 = samples 0..31: 8 x 1, 24 x 2
     assert window_activity(act, 100) == -1   # past the end
+
+
+def test_context_preprocessing_converges_to_streaming(recording):
+    """API input (cold-start causal filter over context + window, D23) approaches
+    the streaming window as context grows."""
+    from src.preprocessing import preprocess_with_context
+
+    bvp, acc = recording
+    n = (len(bvp) // FS_PPG - C.WINDOW_S) // C.WINDOW_STRIDE_S + 1
+    streamed = stream_subject(bvp, acc, n)
+    k = n - 1                                     # last window: 52 s of history
+    errs = []
+    for c in (0, 2, 8, 30):
+        x = preprocess_with_context(bvp[PPG_STEP * k - 64 * c : PPG_STEP * k + 512],
+                                    acc[ACC_STEP * k - 32 * c : ACC_STEP * k + 256])
+        errs.append(np.abs(x - streamed[k]).max())
+    assert errs == sorted(errs, reverse=True)     # more context, closer to streaming
+    assert errs[-1] < 1e-3
+
+
+def test_context_preprocessing_validates_inputs(rng):
+    from src.preprocessing import preprocess_with_context
+
+    with pytest.raises(ValueError, match="same duration"):
+        preprocess_with_context(rng.normal(size=640), rng.normal(size=(256, 3)))
+    with pytest.raises(ValueError, match="at least"):
+        preprocess_with_context(rng.normal(size=500), rng.normal(size=(250, 3)))
+    with pytest.raises(ValueError, match="3 columns"):
+        preprocess_with_context(rng.normal(size=640), rng.normal(size=(320, 2)))

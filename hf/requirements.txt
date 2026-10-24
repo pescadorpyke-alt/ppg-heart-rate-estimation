@@ -1,7 +1,8 @@
-# Inference-only deps for the Hugging Face Space (torch installed separately,
-# CPU-only, in the Dockerfile). Same versions as the root requirements.txt.
+# Inference-only deps for the Hugging Face Space (no PyTorch: the API runs
+# models/ppg_hr.onnx with ONNX Runtime). Same versions as the root requirements.txt.
 numpy==2.5.4
 scipy==1.18.1
 fastapi==0.156.4
 uvicorn[standard]==0.54.0
 pydantic==2.14.1
+onnxruntime==1.26.0

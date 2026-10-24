@@ -10,8 +10,8 @@ set -euo pipefail
 
 REPO="ppg-hr-api"
 FUNCTION="ppg-hr-api"
-MODEL_KEY="models/best.pt"
-MODEL_PATH="./best.pt"          # bundled alongside the code
+MODEL_KEY="models/ppg_hr.onnx"
+MODEL_PATH="./models/ppg_hr.onnx"   # committed with the code
 MEMORY_MB=2048
 TIMEOUT_SEC=30
 
@@ -19,7 +19,7 @@ step(){ echo -e "\n=== $* ==="; }
 
 REGION="${AWS_REGION:-$(aws configure get region || true)}"
 [ -n "$REGION" ] || { echo "No region. Run: export AWS_REGION=us-east-1"; exit 1; }
-[ -f "$MODEL_PATH" ] || { echo "Model not found at $MODEL_PATH (include best.pt in the bundle)."; exit 1; }
+[ -f "$MODEL_PATH" ] || { echo "Model not found at $MODEL_PATH (run from the project root)."; exit 1; }
 
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET="ppg-hr-model-${ACCOUNT}-${REGION}"
@@ -64,7 +64,7 @@ aws iam put-role-policy --role-name "$ROLE" --policy-name s3-model-read \
   --policy-document file:///tmp/ppg-s3-policy.json
 
 step "Create/update Lambda function"
-ENVV="Variables={MODEL_S3_BUCKET=${BUCKET},MODEL_S3_KEY=${MODEL_KEY},MODEL_LOCAL_PATH=/tmp/best.pt}"
+ENVV="Variables={MODEL_S3_BUCKET=${BUCKET},MODEL_S3_KEY=${MODEL_KEY},MODEL_LOCAL_PATH=/tmp/ppg_hr.onnx}"
 if ! aws lambda get-function --function-name "$FUNCTION" >/dev/null 2>&1; then
   aws lambda create-function --function-name "$FUNCTION" \
     --package-type Image --code ImageUri="$IMAGE" \

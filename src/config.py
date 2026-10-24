@@ -69,3 +69,14 @@ EPOCHS = 80
 LR = 1e-3
 WEIGHT_DECAY = 1e-4
 SEED = 42
+
+# --- Inference API (D23) ------------------------------------------------------
+# Seconds of raw signal the client sends before the 8 s window, so the causal
+# filter can settle. Minimum chosen by the rule in DECISIONS.md D23 from
+# results/context_eval_ds_32hz_fixed_causal_summary.json (2 s: within 0.1 bpm
+# of full streaming; 0 s was 0.13 bpm worse). The maximum only bounds payload size.
+API_MIN_CONTEXT_S = 2
+API_MAX_CONTEXT_S = 60
+# LOSO MAE of the served recipe (FP32, streaming input, mean over 15 subjects),
+# from results/stream_eval_ds_32hz_fixed_causal_summary.json ("streaming_fp32").
+API_MODEL_LOSO_MAE_BPM = 9.22

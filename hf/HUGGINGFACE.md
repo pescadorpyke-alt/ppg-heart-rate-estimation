@@ -20,7 +20,7 @@ maintain. Ideal as a live ML portfolio demo.
    In the new Space → **Files** tab → **Add file → Upload files**, then drag in
    **all** of the unzipped contents, preserving folders:
    ```
-   Dockerfile   README.md   requirements.txt   best.pt   src/   api/
+   Dockerfile   README.md   requirements.txt   src/   api/   models/
    ```
    Drag the `src/` and `api/` **folders** too (HF keeps the structure). Commit.
 
@@ -47,5 +47,6 @@ curl -X POST https://<user>-ppg-heart-rate.hf.space/predict \
 
 - Free Spaces **sleep after ~48 h idle** and wake on the next request (a short
   cold start) — fine for a portfolio demo.
-- The model (`best.pt`, ~0.5 MB) is baked into the image; no external storage.
+- The model (`models/ppg_hr.onnx`, ~186 KB, plus `models/ppg_hr.json`) is baked into
+  the image; no external storage and no PyTorch. `/health` reports its SHA-256.
 - This is the *same* FastAPI app you run locally — identical behaviour.

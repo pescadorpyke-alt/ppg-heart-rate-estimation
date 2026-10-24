@@ -4,7 +4,7 @@
   Prereqs (see deploy/README.md):
     - AWS CLI v2 configured (`aws configure`) with a region
     - Docker Desktop running
-    - Trained checkpoint at D:\ppg-dalia-hr\checkpoints\best.pt
+    - The committed model at models\ppg_hr.onnx (run from the project root)
 
   Run from the PROJECT ROOT:
     powershell -ExecutionPolicy Bypass -File deploy\deploy.ps1
@@ -17,8 +17,8 @@ param(
   [string]$Repo        = "ppg-hr-api",
   [string]$Function    = "ppg-hr-api",
   [string]$Bucket      = "",          # auto-generated if empty
-  [string]$ModelKey    = "models/best.pt",
-  [string]$ModelPath   = "D:\ppg-dalia-hr\checkpoints\best.pt",
+  [string]$ModelKey    = "models/ppg_hr.onnx",
+  [string]$ModelPath   = "models\ppg_hr.onnx",
   [int]   $MemoryMB    = 2048,
   [int]   $TimeoutSec  = 30
 )
@@ -74,7 +74,7 @@ aws iam put-role-policy --role-name $Role --policy-name s3-model-read `
 
 # --- 5. Lambda function --------------------------------------------------------
 Step "Create/update Lambda function"
-$envVars = "Variables={MODEL_S3_BUCKET=$Bucket,MODEL_S3_KEY=$ModelKey,MODEL_LOCAL_PATH=/tmp/best.pt}"
+$envVars = "Variables={MODEL_S3_BUCKET=$Bucket,MODEL_S3_KEY=$ModelKey,MODEL_LOCAL_PATH=/tmp/ppg_hr.onnx}"
 aws lambda get-function --function-name $Function 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
   aws lambda create-function --function-name $Function `

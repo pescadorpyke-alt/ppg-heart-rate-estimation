@@ -57,7 +57,7 @@ aws iam delete-role-policy --role-name ppg-hr-api-role --policy-name s3-model-re
 aws iam detach-role-policy --role-name ppg-hr-api-role --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 aws iam delete-role --role-name ppg-hr-api-role
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text); REGION=${AWS_REGION}
-aws s3 rm s3://ppg-hr-model-${ACCOUNT}-${REGION}/models/best.pt
+aws s3 rm s3://ppg-hr-model-${ACCOUNT}-${REGION}/models/ppg_hr.onnx
 aws s3api delete-bucket --bucket ppg-hr-model-${ACCOUNT}-${REGION}
 aws ecr delete-repository --repository-name ppg-hr-api --force
 ```

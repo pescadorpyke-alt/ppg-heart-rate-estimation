@@ -10,3 +10,4 @@ torch==2.12.1
 fastapi==0.156.4
 uvicorn[standard]==0.54.0
 pydantic==2.14.1
+onnxruntime==1.26.0   # the API serves models/ppg_hr.onnx
