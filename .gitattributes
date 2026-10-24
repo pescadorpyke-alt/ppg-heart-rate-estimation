@@ -1,0 +1,8 @@
+# Normalise line endings in the repository; keep LF where tools require it.
+* text=auto
+Makefile text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.tflite binary
+*.onnx binary
+*.png binary
