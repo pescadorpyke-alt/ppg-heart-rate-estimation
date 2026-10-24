@@ -58,7 +58,7 @@ def profile(model: nn.Module, input_shape: tuple[int, ...]) -> dict:
 
 
 def main():
-    from .loso import MODELS, INPUTS
+    from .loso import INPUTS, MODELS
 
     print(f"Budget: <= {BUDGET['macs']:,} MACs, <= {BUDGET['weights_int8_kb']} KB INT8 "
           f"weights, <= {BUDGET['peak_act_int8_kb']} KB INT8 peak activations\n")

@@ -8,7 +8,8 @@ env vars:
     MODEL_S3_BUCKET, MODEL_S3_KEY   -> where the checkpoint lives
     MODEL_LOCAL_PATH=/tmp/best.pt   -> only /tmp is writable on Lambda
 """
-from api.main import app
 from mangum import Mangum
+
+from api.main import app
 
 handler = Mangum(app, lifespan="off")

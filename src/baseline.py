@@ -154,7 +154,7 @@ def main():
         results[name] = np.array(maes)
         print(f"  {name:<13} done", flush=True)
 
-    print(f"\nPer-subject MAE (bpm), all 15 subjects:")
+    print("\nPer-subject MAE (bpm), all 15 subjects:")
     print(f"{'method':<14}" + "".join(f"{'S' + str(s):>6}" for s in C.ALL_SUBJECTS)
           + f"{'mean':>8}{'std':>6}")
     for name, maes in results.items():

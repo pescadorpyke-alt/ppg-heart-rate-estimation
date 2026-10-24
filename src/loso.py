@@ -21,14 +21,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+from functools import partial
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from . import config as C
-from functools import partial
-
 from .model import DSHeartRateCNN, PPGHeartRateCNN, count_params
 from .preprocessing import x_path
 from .train import fit, predict, set_seed
@@ -148,7 +147,7 @@ def main():
         },
         "epochs_max": args.epochs, "patience": args.patience,
         # (epoch, train MAE, val MAE) per fold, to check the epoch cap afterwards.
-        "history": {f"S{r['test_subject']}": h for r, h in zip(rows, histories)},
+        "history": {f"S{r['test_subject']}": h for r, h in zip(rows, histories, strict=True)},
     }
     print(f"\nLOSO {args.model}: MAE {maes.mean():.2f} +/- {maes.std():.2f} bpm "
           f"(mean +/- std over {len(maes)} subjects)")

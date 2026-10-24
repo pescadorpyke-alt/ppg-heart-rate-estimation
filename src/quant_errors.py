@@ -65,7 +65,8 @@ def main(model: str = "ds_32hz_fixed", variant: str = "hr_stratified_2d"):
     for r in sorted(rows, key=lambda r: -r["abs_diff"])[:8]:
         print(f"  S{r['subject']:<2} win {r['window']:<5} |diff| {r['abs_diff']:5.2f}  fp32 {r['fp32']:6.1f}"
               f"  int8 {r['int8']:6.1f}  true {r['true']:6.1f}  {r['activity']:<12}"
-              f" ACC peak {r['acc_peak_0p1g']:5.2f} x0.1g (above {r['acc_peak_pct_of_subject']:.1f}% of subject)")
+              f" ACC peak {r['acc_peak_0p1g']:5.2f} x0.1g"
+              f" (above {r['acc_peak_pct_of_subject']:.1f}% of subject)")
     cmin = min(c["int8_output_max_bpm"] for c in ceilings)
     cmax = max(c["int8_output_max_bpm"] for c in ceilings)
     print(f"INT8 output ceiling across folds: {cmin:.1f} .. {cmax:.1f} bpm "

@@ -72,7 +72,8 @@ def main():
         pinned = f"not pinned ({type(e).__name__})"
 
     inp = INPUTS[args.model]
-    path = C.HEAVY_ROOT / "export" / args.model / args.variant / f"S{args.subject}" / f"model_{args.format}.tflite"
+    folder = C.HEAVY_ROOT / "export" / args.model / args.variant / f"S{args.subject}"
+    path = folder / f"model_{args.format}.tflite"
     blob = path.read_bytes()
     it = make_interpreter(blob, threads=1)
     it.allocate_tensors()

@@ -80,7 +80,7 @@ class DSHeartRateCNN(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool1d(2),
         )]
-        for c_in, c_out, k in zip(widths[:-1], widths[1:], kernels[1:]):
+        for c_in, c_out, k in zip(widths[:-1], widths[1:], kernels[1:], strict=True):
             layers.append(ds_block(c_in, c_out, k))
         self.features = nn.Sequential(*layers)
         self.pool = nn.AdaptiveAvgPool1d(1)

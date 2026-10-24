@@ -26,8 +26,16 @@ import numpy as np
 import torch
 
 from . import config as C
-from .export import (N_CALIB, calib_indices, make_interpreter, run_tflite, to_channels_last,
-                     to_onnx, to_saved_model, to_tflite)
+from .export import (
+    N_CALIB,
+    calib_indices,
+    make_interpreter,
+    run_tflite,
+    to_channels_last,
+    to_onnx,
+    to_saved_model,
+    to_tflite,
+)
 from .loso import INPUTS, MODELS
 from .model import to_2d
 from .preprocessing import x_path
@@ -77,7 +85,8 @@ def main():
     spec = {
         "model": MODEL,
         "trained_on": f"PPG-DaLiA S1-S15, all windows, {ckpt['epochs']} epochs (D20)",
-        "accuracy_estimate": "LOSO of the same recipe: see results/stream_eval_ds_32hz_fixed_causal_summary.json",
+        "accuracy_estimate": ("LOSO of the same recipe: see "
+                              "results/stream_eval_ds_32hz_fixed_causal_summary.json"),
         "input": {
             "tflite_shape_nhwc": [1, 1, T, c],
             "onnx_shape_nchw": [1, c, 1, T],
