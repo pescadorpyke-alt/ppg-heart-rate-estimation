@@ -18,7 +18,7 @@ streaming pipeline a wearable would run.**
 Every number in this repo comes from code in it, run on PPG-DaLiA with
 leave-one-subject-out evaluation. Published results are cited with links, never
 quoted from memory. Every design choice, with the alternatives and the trade-off,
-is in [`DECISIONS.md`](DECISIONS.md) (D1–D22). **Not a medical device**
+is in [`DECISIONS.md`](DECISIONS.md) (D1–D23). **Not a medical device**
 ([`MODEL_CARD.md`](MODEL_CARD.md)).
 
 ![Simulated device loop on held-out subject S7](docs/device_demo_ds_32hz_fixed_causal_S7.png)
@@ -226,7 +226,7 @@ python -m src.cli data baselines profile loso export stream-eval demo final repo
 `--resume` continues after a crash. The CLI runs TensorFlow steps with the export
 environment (`PPG_EXPORT_PYTHON`).
 
-**Tests:** 45 pytest tests that need neither the dataset nor TensorFlow
+**Tests:** 54 pytest tests that need neither the dataset nor TensorFlow
 ([`tests/`](tests/)). They cover:
 - filter bands;
 - streaming == causal training windows;
@@ -250,6 +250,7 @@ CI runs ruff and pytest on every push ([`.github/workflows/ci.yml`](.github/work
 │   ├── profile_model.py, report.py   # params / MACs / KB vs budget; README tables
 │   ├── export.py, quant_errors.py    # ONNX / TFLite FP32-FP16-INT8 per fold; INT8 error analysis
 │   ├── benchmark.py, stream_eval.py  # latency per runtime; accuracy per input pipeline
+│   ├── context_eval.py               # how much signal before the window the API needs (D23)
 │   ├── device_demo.py                # simulated device loop: timing, memory, plot
 │   ├── train_final.py, export_final.py  # deployable model -> models/
 │   ├── infer.py, make_example.py     # API inference helpers
@@ -260,32 +261,54 @@ CI runs ruff and pytest on every push ([`.github/workflows/ci.yml`](.github/work
 ├── docs/DEVICE.md         # what is measured; next steps for TFLite Micro and Android
 ├── api/main.py            # FastAPI inference service
 ├── deploy/, hf/           # AWS Lambda and Hugging Face Space deployment
-├── DECISIONS.md           # D1-D22: each choice, alternatives, trade-off
+├── DECISIONS.md           # D1-D23: each choice, alternatives, trade-off
 └── MODEL_CARD.md          # data, intended use, per-subject results, limitations
 ```
 
 ## Inference API
 
-A FastAPI service ([`api/main.py`](api/main.py)) is live on Hugging Face Spaces:
-[pescas-ppg-heart-rate.hf.space/docs](https://pescas-ppg-heart-rate.hf.space/docs).
-**It still serves the original model from the first version of this repo**
-(trained on 5 subjects, zero-phase preprocessing). The edge model needs causal
-streaming preprocessing, which a stateless single-window API cannot provide as is
-(D21). Changing that is a listed next step.
+A FastAPI service ([`api/main.py`](api/main.py)) serves the **committed edge model**
+(`models/ppg_hr.onnx`) with ONNX Runtime: no PyTorch, and `/health` reports the
+model file's SHA-256, so you can check which file is answering.
+
+**Why requests carry extra signal:** the model expects causally filtered input
+(D21), and a causal filter needs history. A stateless API has none, so each
+request sends **c = 2–60 s of signal before the 8 s window**. The server filters
+the whole segment causally and scores the last 8 s. The 2 s minimum was measured,
+by a rule committed beforehand (D23):
+
+| Context before the window | 0 s | **2 s** | 8 s | 30 s |
+|---|---|---|---|---|
+| MAE vs full streaming (bpm) | +0.13 | **−0.003** | 0.000 | 0.000 |
 
 ```bash
 uvicorn api.main:app --port 8000
 curl -X POST http://127.0.0.1:8000/predict \
   -H "Content-Type: application/json" -d @api/example_payload.json
+# -> {"heart_rate_bpm":84.0,"context_s":2,"model":"ds_32hz_fixed_causal","model_loso_mae_bpm":9.22}
 ```
 
-`POST /predict` takes one raw 8 s window: `ppg` (512 values, 64 Hz) and `acc`
-(256 × 3 values, 32 Hz, in g). Wrong shapes and NaN/Infinity values return
-HTTP 422. NaN/Infinity used to pass validation and reach the model. Rejecting them
-exposed a second bug: FastAPI's default error response crashed when it echoed a
-NaN back. Both are fixed and covered by tests. The same image is
-deployable to AWS Lambda ([`deploy/README.md`](deploy/README.md); not currently
-provisioned).
+The example (S4, window 1500) has an ECG reference of 98.5 bpm. It is one window
+from a subject the served model was trained on: a demo, not an accuracy result.
+
+`POST /predict`:
+- `ppg`: 64 × (8 + c) raw PPG samples (64 Hz).
+- `acc`: 32 × (8 + c) rows of [x, y, z] in g (32 Hz), covering the same seconds.
+
+Requests are rejected with HTTP 422 when:
+- the context is shorter than 2 s or longer than 60 s, or not a whole number of
+  seconds;
+- `ppg` and `acc` cover different durations;
+- any value is NaN or Infinity.
+
+The NaN check also fixed a crash in FastAPI's default error response (covered by
+tests).
+
+**Live demo:** [pescas-ppg-heart-rate.hf.space/docs](https://pescas-ppg-heart-rate.hf.space/docs)
+**still runs the original model and request format** until the Space is
+redeployed with this version. [`hf/Dockerfile`](hf/Dockerfile) is ready, but no
+Docker image has been built from it yet. The same app also deploys to AWS Lambda
+([`deploy/README.md`](deploy/README.md); not currently provisioned).
 
 ## Limitations
 
@@ -301,6 +324,7 @@ Summarised here; per-subject results and risks are in
 - **High heart rates:** the INT8 model cannot output above 177.4 bpm and
   under-predicts very high rates (D16).
 - **No smoothing across windows.**
-- **The live API still serves the old model** (see above).
+- **The live Hugging Face demo still runs the old model** until it is redeployed
+  (the API code in this repo serves the edge model).
 - **Not state-of-the-art:** the best published results are clearly better. The
   goal is a small model that fits an edge budget, evaluated honestly.

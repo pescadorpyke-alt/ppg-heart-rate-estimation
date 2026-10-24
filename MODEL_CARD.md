@@ -96,8 +96,9 @@ table and caveats.
 - **High heart rates:** the INT8 model cannot output above 177.4 bpm, and the
   model under-predicts very high heart rates even in FP32 (D16).
 - **No temporal smoothing** across windows; consecutive readings can jump.
-- **Preprocessing must match exactly.** Feeding zero-phase-filtered windows (as
-  the current public API does) to this model raises MAE to 11.75 bpm (D21).
+- **Preprocessing must match exactly.** Feeding zero-phase-filtered windows to
+  this model raises MAE to 11.75 bpm (D21). The API therefore takes ≥ 2 s of
+  signal before each window and filters causally (D23).
 - **Evaluation used the same 15 subjects** that the final model was trained on;
   the LOSO number is an estimate for this recipe, not a measurement of this file.
 - **No real device yet:** latency and memory were measured on a desktop CPU only

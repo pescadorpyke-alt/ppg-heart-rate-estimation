@@ -640,3 +640,30 @@ rather than answered with silently worse accuracy.
 
 **Trade-off:** larger requests (c extra seconds of signal per call) in exchange
 for a stateless API whose input matches what the model was trained on.
+
+**Outcome** (`src/context_eval.py`, windows with ≥ 30 s of history, FP32 fold
+models; `results/context_eval_ds_32hz_fixed_causal*`):
+
+| Context c | MAE (bpm) | vs full streaming | Largest input difference |
+|---|---|---|---|
+| 0 s (cold start) | 9.350 ± 5.006 | +0.132 | 22.5 |
+| **2 s** | 9.216 ± 4.857 | −0.003 | 3.62 |
+| 4 s | 9.219 ± 4.856 | 0.000 | 0.934 |
+| 8 s | 9.219 ± 4.856 | 0.000 | 0.023 |
+| 30 s | 9.219 ± 4.856 | 0.000 | 6.0 × 10⁻⁸ |
+
+By the rule, the **minimum context is 2 s** (0 s fails the 0.1 bpm limit). The API
+accepts 2–60 s; the 60 s cap only bounds request size.
+
+**What else changed with it:**
+- The API now serves the committed `models/ppg_hr.onnx` with ONNX Runtime, so it
+  runs exactly the file in git, and `/health` reports its SHA-256. The API no
+  longer needs PyTorch: the Hugging Face and Lambda images drop it.
+- Checked by starting the real server in a fresh environment built only from
+  `hf/requirements.txt` (no PyTorch). Health, the example request, and the 422
+  for a request without context all behaved as expected. The Docker images
+  themselves were not built (Docker is not installed here).
+- The example window from the original repo (S4, window 1500, ECG 98.5 bpm) now
+  returns 84.0 bpm; the old model returned 107.1. That is one window, and the
+  served model was trained on S4, so neither number is an accuracy measurement.
+  It was not swapped for a more flattering window.
