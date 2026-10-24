@@ -609,3 +609,34 @@ and need a re-run to confirm results.
 **Found by the tests:** the API accepted NaN/Infinity. Once they were rejected,
 FastAPI's default 422 response tried to echo the NaN back as JSON and crashed.
 Both are fixed (`api/main.py`).
+
+---
+
+## D23. API input for a causal model: send context before the window (rule set before the results)
+
+**The problem:** the shipped model expects causally filtered input (D21). A causal
+filter needs history: started cold on a single 8 s window, its first seconds are a
+start-up transient. A stateless HTTP API receives one request at a time and has
+no history.
+
+**Chosen:** the client sends **c seconds of extra raw signal before the 8 s
+window** (`ppg`: 64 × (8 + c) samples, `acc`: 32 × (8 + c) × 3). The server filters
+the whole segment causally and keeps the last 8 s. With enough context this is the
+same signal a device computes while streaming (checked in tests).
+
+**How c is chosen (rule committed before measuring):** using the 15 LOSO fold
+models of `ds_32hz_fixed_causal`, each on its held-out subject, compute MAE for
+c ∈ {0, 2, 4, 8, 16, 30} s. Use only windows with at least 30 s of history, so
+every c is scored on the same windows. Compare against full streaming on those
+same windows. **The API's minimum context is the smallest c whose mean MAE is
+within 0.1 bpm of full streaming.** Requests with less context are rejected (422)
+rather than answered with silently worse accuracy.
+
+**Alternatives:**
+- *Server-side state per client:* exact streaming, but sessions, expiry and a
+  single stateful instance; fragile on a free host.
+- *Clients send preprocessed windows:* the server stays trivial, but every client
+  must re-implement the filter exactly. D21 showed how costly a mismatch is.
+
+**Trade-off:** larger requests (c extra seconds of signal per call) in exchange
+for a stateless API whose input matches what the model was trained on.
