@@ -8,25 +8,47 @@ Run locally:
 """
 from __future__ import annotations
 
+import math
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 # Allow `uvicorn api.main:app` from the project root to import the src package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src import config as C          # noqa: E402
-from src.infer import load_model, predict_hr   # noqa: E402
+from src import config as C  # noqa: E402
+from src.infer import load_model, predict_hr  # noqa: E402
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load the model at startup (fail fast if the checkpoint is missing or bad).
+    load_model()
+    yield
+
 
 app = FastAPI(
     title="PPG Heart-Rate Estimation API",
     description="Wearable PPG + accelerometer -> heart rate (bpm).",
     version="1.0.0",
+    lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError):
+    # FastAPI's default 422 body echoes the offending input back. A NaN/Infinity
+    # in the request cannot be written as JSON, so the default handler crashed;
+    # return where and why validation failed, without the raw values.
+    errors = [{"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")}
+              for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 class PredictRequest(BaseModel):
@@ -45,6 +67,9 @@ class PredictRequest(BaseModel):
     def _check_ppg(cls, v):
         if len(v) != C.PPG_WINDOW_LEN:
             raise ValueError(f"ppg must have exactly {C.PPG_WINDOW_LEN} samples, got {len(v)}")
+        # JSON parsers accept NaN/Infinity; a single one would poison the filter.
+        if not all(math.isfinite(x) for x in v):
+            raise ValueError("ppg must contain only finite numbers (no NaN or Infinity)")
         return v
 
     @field_validator("acc")
@@ -54,18 +79,14 @@ class PredictRequest(BaseModel):
             raise ValueError(f"acc must have exactly {C.ACC_WINDOW_LEN} rows, got {len(v)}")
         if any(len(row) != 3 for row in v):
             raise ValueError("each acc row must have exactly 3 values [x, y, z]")
+        if not all(math.isfinite(x) for row in v for x in row):
+            raise ValueError("acc must contain only finite numbers (no NaN or Infinity)")
         return v
 
 
 class PredictResponse(BaseModel):
     heart_rate_bpm: float
     model_val_mae_bpm: float | None = None
-
-
-@app.on_event("startup")
-def _warm_up():
-    # Load the model at startup (fail fast if checkpoint is missing/bad).
-    load_model()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -98,7 +119,7 @@ def health():
         _, meta = load_model()
         return {"status": "ok", "model": meta}
     except Exception as e:  # pragma: no cover
-        raise HTTPException(status_code=503, detail=f"model not loaded: {e}")
+        raise HTTPException(status_code=503, detail=f"model not loaded: {e}") from e
 
 
 @app.post("/predict", response_model=PredictResponse)
@@ -107,7 +128,7 @@ def predict(req: PredictRequest):
         _, meta = load_model()
         hr = predict_hr(np.asarray(req.ppg), np.asarray(req.acc))
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=f"inference failed: {e}")
+        raise HTTPException(status_code=500, detail=f"inference failed: {e}") from e
     return PredictResponse(heart_rate_bpm=round(hr, 1), model_val_mae_bpm=meta.get("val_mae"))

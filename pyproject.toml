@@ -1,0 +1,26 @@
+[project]
+name = "ppg-heart-rate-estimation"
+version = "2.0.0"
+description = "Wrist PPG + accelerometer heart-rate estimation for edge devices (PPG-DaLiA)."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = ["data", "results", "models", "docs"]
+
+[tool.ruff.lint]
+# pycodestyle errors/warnings, pyflakes, import order, bugbear, pyupgrade
+select = ["E", "W", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# api/main.py adds the repo root to sys.path before importing src.
+"api/main.py" = ["E402"]
+# export/benchmark scripts set TF_CPP_MIN_LOG_LEVEL before importing numpy/torch.
+"src/*.py" = ["E402"]
