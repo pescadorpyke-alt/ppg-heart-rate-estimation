@@ -183,6 +183,30 @@ def preprocess_window(ppg_raw: np.ndarray, acc_raw: np.ndarray, fs_out: int = 64
     return assemble_window(ppg_f, acc_f, fs_out, acc_norm)
 
 
+def preprocess_with_context(ppg_raw: np.ndarray, acc_raw: np.ndarray, fs_out: int = 32,
+                            acc_norm: str = "fixed") -> np.ndarray:
+    """Model input for a causal model from one raw segment = context + 8 s window.
+
+    ppg_raw: (64 * (8 + c),) raw BVP @ 64 Hz; acc_raw: (32 * (8 + c), 3) raw ACC
+    @ 32 Hz (in g), covering the same c + 8 seconds. The whole segment is
+    filtered causally (as a device does while streaming) and the last 8 s become
+    the window, so the c seconds of context let the filter settle (D23).
+    """
+    ppg = np.asarray(ppg_raw, dtype=np.float64).reshape(-1)
+    acc = np.asarray(acc_raw, dtype=np.float64)
+    if acc.ndim != 2 or acc.shape[1] != 3:
+        raise ValueError(f"acc must have 3 columns [x, y, z], got shape {acc.shape}")
+    if ppg.shape[0] < C.PPG_WINDOW_LEN or acc.shape[0] < C.ACC_WINDOW_LEN:
+        raise ValueError(f"need at least {C.WINDOW_S} s: {C.PPG_WINDOW_LEN} ppg samples and "
+                         f"{C.ACC_WINDOW_LEN} acc rows, got {ppg.shape[0]} and {acc.shape[0]}")
+    if ppg.shape[0] * C.FS_ACC != acc.shape[0] * C.FS_PPG:
+        raise ValueError(f"ppg ({ppg.shape[0]} samples @ {C.FS_PPG} Hz) and acc "
+                         f"({acc.shape[0]} rows @ {C.FS_ACC} Hz) must cover the same duration")
+    ppg_f = bandpass_causal(ppg, C.FS_PPG)[-C.PPG_WINDOW_LEN:]
+    acc_f = bandpass_causal(acc, C.FS_ACC)[-C.ACC_WINDOW_LEN:]
+    return assemble_window(ppg_f, acc_f, fs_out, acc_norm)
+
+
 # --- Windowing ---------------------------------------------------------------
 def window_activity(activity: np.ndarray, k: int) -> int:
     """Activity ID for window k: the most common 4 Hz label inside the 8 s window."""

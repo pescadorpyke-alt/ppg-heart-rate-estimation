@@ -1,0 +1,45 @@
+{
+  "streaming": {
+    "mae_mean_over_subjects": 9.218843682607014,
+    "mae_std_over_subjects": 4.856274489704784,
+    "mean_diff_vs_streaming": 0.0,
+    "max_input_diff_vs_streaming": 0.0
+  },
+  "c0": {
+    "mae_mean_over_subjects": 9.350344721476237,
+    "mae_std_over_subjects": 5.005902171069085,
+    "mean_diff_vs_streaming": 0.13150103886922201,
+    "max_input_diff_vs_streaming": 22.49495506286621
+  },
+  "c2": {
+    "mae_mean_over_subjects": 9.215610345204672,
+    "mae_std_over_subjects": 4.85662930170638,
+    "mean_diff_vs_streaming": -0.00323333740234375,
+    "max_input_diff_vs_streaming": 3.6214098930358887
+  },
+  "c4": {
+    "mae_mean_over_subjects": 9.21880022684733,
+    "mae_std_over_subjects": 4.856284809315422,
+    "mean_diff_vs_streaming": -4.3455759684244795e-05,
+    "max_input_diff_vs_streaming": 0.9338977336883545
+  },
+  "c8": {
+    "mae_mean_over_subjects": 9.21884625752767,
+    "mae_std_over_subjects": 4.856282028296968,
+    "mean_diff_vs_streaming": 2.574920654296875e-06,
+    "max_input_diff_vs_streaming": 0.02322256565093994
+  },
+  "c16": {
+    "mae_mean_over_subjects": 9.218843682607014,
+    "mae_std_over_subjects": 4.856274580039527,
+    "mean_diff_vs_streaming": 0.0,
+    "max_input_diff_vs_streaming": 1.4722347259521484e-05
+  },
+  "c30": {
+    "mae_mean_over_subjects": 9.218843682607014,
+    "mae_std_over_subjects": 4.856274489704784,
+    "mean_diff_vs_streaming": 0.0,
+    "max_input_diff_vs_streaming": 5.960464477539063e-08
+  },
+  "chosen_min_context_s": 2
+}
