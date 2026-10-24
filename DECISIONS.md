@@ -568,3 +568,44 @@ model.
   and still differs from whole-recording filtering at window edges.
 - *Train on a mix of both filters:* a model that tolerates both, but it is
   evaluated on neither cleanly.
+
+---
+
+## D22. Engineering tooling: what is tested, pinned and automated
+
+**Chosen:**
+- **pytest, with no dataset needed** (45 tests). The tests check properties
+  that a regression would silently break, rather than re-running experiments:
+  - streaming windows equal causal training windows (the basis of D21);
+  - filter pass and stop bands;
+  - parameter and MAC counts against the edge budget;
+  - the 2-D export copy giving identical outputs;
+  - the DSP baseline on synthetic signals with a known heart rate;
+  - INT8 calibration covering high heart rates (D16);
+  - API input validation.
+- **ruff** for lint (pycodestyle, pyflakes, import order, bugbear, pyupgrade).
+- **Exact version pins** in `requirements.txt` / `requirements-dev.txt` /
+  `requirements-export.txt`: the versions every result was produced with.
+  Packages the code never imports were removed.
+- **A Python CLI (`src/cli.py`) as the entry point, with a thin Makefile on
+  top**, because the project was developed on Windows, where `make` is usually not
+  installed.
+- **GitHub Actions** runs ruff and pytest on every push, with CPU-only PyTorch.
+  The same steps were run in a fresh clone and a fresh virtual environment before
+  committing.
+
+**Alternatives:**
+- *Tests that run the real pipeline on the dataset:* closer to the real thing,
+  but CI cannot download 2.7 GB on every push, and a full LOSO run takes hours.
+- *Version ranges instead of pins:* fewer upgrade chores, but "same code,
+  different numbers" becomes possible.
+- *Make only:* standard on Linux, but not usable out of the box on Windows.
+
+**Trade-off:** the tests prove that the pieces behave as designed, not that the
+reported accuracy reproduces. Reproducing the numbers still needs the dataset and
+the CLI steps (hours on a CPU). The pins mean dependency upgrades are deliberate
+and need a re-run to confirm results.
+
+**Found by the tests:** the API accepted NaN/Infinity. Once they were rejected,
+FastAPI's default 422 response tried to echo the NaN back as JSON and crashed.
+Both are fixed (`api/main.py`).
